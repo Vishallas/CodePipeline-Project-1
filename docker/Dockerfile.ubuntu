@@ -1,0 +1,71 @@
+# Dockerfile.ubuntu — Build image for Ubuntu .deb packages
+#
+# Build args:
+#   UBUNTU_VERSION  — 20.04 | 22.04 | 24.04
+#   PG_VERSIONS     — space-separated list, e.g. "14 15 16 17"
+#
+# Usage:
+#   docker build \
+#     --build-arg UBUNTU_VERSION=22.04 \
+#     --build-arg PG_VERSIONS="14 15 16 17" \
+#     -f docker/Dockerfile.ubuntu \
+#     -t mydbops/pg-build:ubuntu-22.04-amd64 .
+
+ARG UBUNTU_VERSION=22.04
+FROM ubuntu:${UBUNTU_VERSION}
+
+ARG PG_VERSIONS="14 15 16 17"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Base build toolchain
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    build-essential \
+    devscripts \
+    debhelper \
+    fakeroot \
+    dpkg-dev \
+    dpkg-sig \
+    lintian \
+    quilt \
+    curl \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    python3 \
+    python3-yaml \
+    jq \
+    git \
+    wget \
+    unzip \
+  && rm -rf /var/lib/apt/lists/*
+
+# PostgreSQL PGDG apt repository
+RUN install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+     -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+     https://apt.postgresql.org/pub/repos/apt \
+     $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" \
+     > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update -qq
+
+# Install dev headers for each PG major version
+RUN for v in ${PG_VERSIONS}; do \
+      apt-get install -y -qq --no-install-recommends \
+        postgresql-server-dev-${v} \
+        postgresql-${v} \
+        libpq-dev \
+      || echo "Warning: pg${v} dev headers not available on this release"; \
+    done \
+  && rm -rf /var/lib/apt/lists/*
+
+# AWS CLI v2
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" \
+      -o /tmp/awscliv2.zip \
+  && unzip -q /tmp/awscliv2.zip -d /tmp \
+  && /tmp/aws/install \
+  && rm -rf /tmp/aws /tmp/awscliv2.zip
+
+WORKDIR /build

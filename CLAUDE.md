@@ -16,7 +16,7 @@ This repo contains:
 - The custom build script (`scripts/build-package.sh`) that drives all packaging
 - AWS CodeBuild buildspecs (one per OS/arch target)
 - Terraform for CodePipeline infrastructure (one pipeline per PG version + one for tools)
-- A Lambda that parses git tags into pipeline variables
+- A CodeBuild-based tag parser (`buildspec/buildspec-parse-tag.yml`) — no Lambda
 - Shared shell libraries
 - Config files (pg-versions.yml, repos.yml)
 - Scaffolding templates for new packages
@@ -241,7 +241,7 @@ mydbops-pg-platform/
 │   └── buildspec-test.yml            ← smoke tests after build
 │
 ├── terraform/
-│   ├── main.tf                       ← root: S3, IAM, Lambda, one module per PG version
+│   ├── main.tf                       ← root: S3, IAM, one module per PG version
 │   ├── variables.tf
 │   ├── outputs.tf
 │   └── modules/
@@ -251,9 +251,6 @@ mydbops-pg-platform/
 │       │   └── outputs.tf
 │       └── repo-updater/
 │           └── main.tf               ← APT/YUM metadata regeneration
-│
-├── lambda/
-│   └── tag_parser.py                 ← parses git tag → SSM params → pipeline variables
 │
 ├── config/
 │   ├── pg-versions.yml               ← master registry: all PG versions, EOL dates,
@@ -305,11 +302,12 @@ Stage 1 │ Source
         │   packages_source  → mydbops-pg-packages branch pg{N}
         │   platform_source  → mydbops-pg-platform branch main
         │
-Stage 2 │ ParseTag  (Lambda: tag_parser.py)
-        │   Reads git tag e.g. pg16/pgvector-0.7.4-1
-        │   Validates version matches METADATA.yml
-        │   Writes to SSM: PACKAGE_NAME, PACKAGE_VERSION, PG_MAJOR, GIT_TAG
-        │   Returns pipeline variables: #{ParseVars.PACKAGE_NAME} etc.
+Stage 2 │ ParseTag  (CodeBuild: mydbops-parse-tag — NO Lambda)
+        │   Receives GIT_TAG pipeline variable from EventBridge
+        │   Parses tag e.g. pg16/pgvector-0.7.4-1
+        │   Validates version matches METADATA.yml in packages_source
+        │   Writes dynamic vars to SSM /mydbops/cicd/build/*
+        │   Exports pipeline variables: #{ParseTag.PACKAGE_NAME} etc.
         │
 Stage 3 │ Build  (4 parallel CodeBuild jobs, run_order=1)
         │   ubuntu-amd64  → buildspec-ubuntu-amd64.yml
@@ -339,7 +337,7 @@ Stage 5 │ Update Staging Repo Metadata
         │   Clients pointing at staging repo can now install the package
         │
 Stage 6 │ Approve  (manual gate in AWS Console)
-        │   Custom message shows package name + version from #{ParseVars.*}
+        │   Custom message shows package name + version from #{ParseTag.*}
         │
 Stage 7 │ Promote to Production
         │   CodeBuild: copies packages from
@@ -531,7 +529,105 @@ dedicated staging bucket for local development — never point at production.
 | Any buildspec | buildspec/buildspec-ubuntu-amd64.yml (as the reference pattern) |
 | Terraform pipeline | terraform/modules/pg-pipeline/main.tf |
 | Adding a target OS | This CLAUDE.md (the 7-step checklist above) |
-| Tag parsing | lambda/tag_parser.py |
+| Tag parsing | buildspec/buildspec-parse-tag.yml |
+| SSM / Secrets Manager usage | This CLAUDE.md (the "SSM and Secrets Manager" section below) |
 | S3 path structure | This CLAUDE.md (the "Output — direct S3 upload" section) |
 | Repo metadata regeneration | terraform/modules/repo-updater/main.tf |
 | EOL a version | scripts/eol.sh, config/pg-versions.yml |
+
+---
+
+## SSM and Secrets Manager
+
+### Rule: what goes where
+
+| Store | Use for | Never use for |
+|-------|---------|---------------|
+| **SSM Parameter Store** | Non-secret config (bucket names, regions, account IDs) and dynamic build vars written per pipeline run | Passwords, private keys, tokens |
+| **Secrets Manager** | Actual secrets: GPG private key, external service passwords | Config that isn't sensitive |
+
+### SSM parameters — complete reference
+
+#### Static (set once, never change per build)
+
+| Parameter | Type | Set by | Read by | Value |
+|-----------|------|--------|---------|-------|
+| `/mydbops/cicd/build/S3_BUCKET` | String | ops team | all buildspecs | `mydbops-cicd-artifacts` |
+| `/mydbops/cicd/build/BUILD_ENV` | String | ops team | all buildspecs | `staging` or `production` |
+| `/mydbops/cicd/ecr/account_id` | String | ops team | all buildspecs | AWS account ID |
+| `/mydbops/cicd/ecr/region` | String | ops team | all buildspecs, parse-tag | `ap-south-1` |
+| `/mydbops/cicd/cloudfront/distribution_id` | String | ops team | repo-updater | CloudFront dist ID |
+| `/mydbops/cicd/gpg/key_id` | String | ops team | build stages (signing) | GPG key fingerprint |
+
+#### Dynamic (overwritten on every pipeline run by ParseTag CodeBuild)
+
+| Parameter | Type | Set by | Read by |
+|-----------|------|--------|---------|
+| `/mydbops/cicd/build/PACKAGE_NAME` | String | `buildspec-parse-tag.yml` | all build, test, repo-updater stages |
+| `/mydbops/cicd/build/PACKAGE_VERSION` | String | `buildspec-parse-tag.yml` | all build, test stages |
+| `/mydbops/cicd/build/PACKAGE_REVISION` | String | `buildspec-parse-tag.yml` | all build, test stages |
+| `/mydbops/cicd/build/PG_MAJOR` | String | `buildspec-parse-tag.yml` | build stages |
+| `/mydbops/cicd/build/GIT_TAG` | String | `buildspec-parse-tag.yml` | audit / logging |
+| `/mydbops/cicd/build/IS_RC` | String | `buildspec-parse-tag.yml` | promote stage (skips if `true`) |
+
+> Dynamic params are overwritten atomically each run using `aws ssm put-parameter --overwrite`.
+> Parallel pipelines for different PG majors each have their own parameter namespace
+> if isolation is needed — add a `/pg14/`, `/pg15/` segment to the path.
+
+### Secrets Manager secrets — complete reference
+
+| Secret name | What it stores | Read by | Rotation |
+|-------------|---------------|---------|---------|
+| `mydbops/cicd/gpg-signing-key` | Base64-encoded GPG private key | all build buildspecs (package signing) | Annually or on key expiry |
+| `mydbops/cicd/pulp-password` | Pulp API password | `scripts/lib/pulp.sh` | Per Pulp policy |
+
+> Secrets Manager is **not** used for non-sensitive values. ECR account ID, S3 bucket
+> names, region, and CloudFront distribution ID are in SSM, not Secrets Manager.
+
+### How buildspecs consume SSM and Secrets Manager
+
+Every buildspec uses the built-in CodeBuild `env` block — no manual `aws ssm get-parameter`
+calls in build scripts:
+
+```yaml
+env:
+  # SSM Parameter Store — non-secret config
+  parameter-store:
+    PACKAGE_NAME:    /mydbops/cicd/build/PACKAGE_NAME     # dynamic, written by ParseTag
+    PACKAGE_VERSION: /mydbops/cicd/build/PACKAGE_VERSION  # dynamic
+    S3_BUCKET:       /mydbops/cicd/build/S3_BUCKET        # static
+    BUILD_ENV:       /mydbops/cicd/build/BUILD_ENV        # static
+    ECR_ACCOUNT_ID:  /mydbops/cicd/ecr/account_id        # static
+    ECR_REGION:      /mydbops/cicd/ecr/region             # static
+
+  # Secrets Manager — sensitive values only
+  secrets-manager:
+    GPG_PRIVATE_KEY: mydbops/cicd/gpg-signing-key         # base64 GPG key
+```
+
+The GPG key value is base64-decoded and imported by `gpg_import_key()` in
+`scripts/lib/common.sh`. It is never written to disk or logged.
+
+### How ParseTag writes dynamic SSM params
+
+```bash
+# In buildspec-parse-tag.yml — runs aws ssm put-parameter for each dynamic var
+aws ssm put-parameter \
+  --name "/mydbops/cicd/build/PACKAGE_NAME" \
+  --value "$PACKAGE_NAME" \
+  --type String \
+  --overwrite
+```
+
+The CodeBuild role (`mydbops-codebuild-role`) has `ssm:PutParameter` on
+`/mydbops/cicd/build/*` and `ssm:GetParameter` on `/mydbops/cicd/*`.
+All other buildspecs only need `ssm:GetParameter`.
+
+### Do not
+
+- Do not put plaintext secrets in SSM (use Secrets Manager for those)
+- Do not call `aws secretsmanager get-secret-value` in build scripts — let the
+  buildspec `env.secrets-manager` block inject the value as an env var
+- Do not hardcode parameter paths in scripts — always read them from the env var
+  that the buildspec injects
+- Do not add new SSM parameters without documenting them in this table

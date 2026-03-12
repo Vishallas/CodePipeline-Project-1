@@ -1,0 +1,69 @@
+# Dockerfile.fedora — Build image for Fedora .rpm packages
+#
+# Build args:
+#   FEDORA_VERSION  — 42 | 43
+#   PG_VERSIONS     — space-separated list, e.g. "14 15 16 17"
+#
+# Usage:
+#   docker build \
+#     --build-arg FEDORA_VERSION=42 \
+#     --build-arg PG_VERSIONS="14 15 16 17" \
+#     -f docker/Dockerfile.fedora \
+#     -t mydbops/pg-build:fedora-42-x86_64 .
+
+ARG FEDORA_VERSION=42
+FROM fedora:${FEDORA_VERSION}
+
+ARG PG_VERSIONS="14 15 16 17"
+
+# Base build toolchain
+RUN dnf install -y \
+    gcc \
+    gcc-c++ \
+    make \
+    rpm-build \
+    rpm-sign \
+    rpmlint \
+    rpmdevtools \
+    redhat-rpm-config \
+    curl \
+    ca-certificates \
+    gnupg2 \
+    python3 \
+    python3-pyyaml \
+    jq \
+    git \
+    wget \
+    unzip \
+    patch \
+    autoconf \
+    automake \
+    libtool \
+  && dnf clean all
+
+# PostgreSQL PGDG repository for Fedora
+RUN dnf install -y \
+    "https://download.postgresql.org/pub/repos/yum/reporpms/F-$(rpm -E %{fedora})-$(uname -m)/pgdg-fedora-repo-latest.noarch.rpm" \
+  && dnf clean all
+
+# Install dev headers for each PG major version
+RUN for v in ${PG_VERSIONS}; do \
+      dnf install -y \
+        postgresql${v}-devel \
+        postgresql${v}-server \
+        postgresql${v}-libs \
+      || echo "Warning: pg${v} devel not available on Fedora $(rpm -E %{fedora})"; \
+    done \
+  && dnf clean all
+
+# rpmmacros for build user
+RUN echo "%_topdir /rpmbuild" > /root/.rpmmacros
+
+# AWS CLI v2
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" \
+      -o /tmp/awscliv2.zip \
+  && unzip -q /tmp/awscliv2.zip -d /tmp \
+  && /tmp/aws/install \
+  && rm -rf /tmp/aws /tmp/awscliv2.zip
+
+WORKDIR /build

@@ -1,0 +1,113 @@
+version: 0.2
+# ─────────────────────────────────────────────────────────────────────────────
+# buildspec-repo-updater.yml — Stage 5 (staging) and Stage 7 (production)
+#
+# Regenerates APT (reprepro) and YUM (createrepo_c) repo metadata and syncs
+# the updated indexes to S3. Called twice per pipeline run:
+#   Stage 5: BUILD_ENV=staging  (default from SSM)
+#   Stage 7: BUILD_ENV=production (overridden by pipeline EnvironmentVariables)
+#
+# Reads from SSM:
+#   PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION (written by ParseTag)
+#   BUILD_ENV_SSM = /mydbops/cicd/build/BUILD_ENV (static default: "staging")
+#   CLOUDFRONT_DIST = /mydbops/cicd/cloudfront/distribution_id
+#
+# Env vars injected by CodeBuild project definition (set via Terraform):
+#   ARTIFACTS_BUCKET, APT_BUCKET, YUM_BUCKET
+# ─────────────────────────────────────────────────────────────────────────────
+
+env:
+  parameter-store:
+    PACKAGE_NAME:     /mydbops/cicd/build/PACKAGE_NAME
+    PACKAGE_VERSION:  /mydbops/cicd/build/PACKAGE_VERSION
+    PACKAGE_REVISION: /mydbops/cicd/build/PACKAGE_REVISION
+    BUILD_ENV_SSM:    /mydbops/cicd/build/BUILD_ENV
+    CLOUDFRONT_DIST:  /mydbops/cicd/cloudfront/distribution_id
+
+phases:
+  install:
+    commands:
+      - apt-get update -qq
+      - apt-get install -y -qq reprepro createrepo-c awscli
+
+  build:
+    commands:
+      # BUILD_ENV may be overridden by the Stage 7 pipeline config (production).
+      # Fall back to the SSM-sourced value for Stage 5 (staging).
+      - |
+        EFFECTIVE_ENV="${BUILD_ENV:-$BUILD_ENV_SSM}"
+        echo "Repo update: env=$EFFECTIVE_ENV package=$PACKAGE_NAME $PACKAGE_VERSION-$PACKAGE_REVISION"
+        export EFFECTIVE_ENV
+
+      # ── APT repo (reprepro) ─────────────────────────────────────────────────
+      - mkdir -p /repo/apt/conf /repo/incoming
+
+      - |
+        cat > /repo/apt/conf/distributions <<'DISTEOF'
+        Codename: focal
+        Components: main
+        Architectures: amd64 arm64
+        SignWith: no
+
+        Codename: jammy
+        Components: main
+        Architectures: amd64 arm64
+        SignWith: no
+
+        Codename: noble
+        Components: main
+        Architectures: amd64 arm64
+        SignWith: no
+        DISTEOF
+
+      - |
+        aws s3 sync \
+          "s3://${ARTIFACTS_BUCKET}/${EFFECTIVE_ENV}/packages/${PACKAGE_NAME}/${PACKAGE_VERSION}-${PACKAGE_REVISION}/" \
+          /repo/incoming/ \
+          --exclude "*.sha256"
+
+      - |
+        for DEB in /repo/incoming/ubuntu-*/*.deb; do
+          [ -f "$DEB" ] || continue
+          case "$DEB" in
+            *ubuntu-20*) CODENAME=focal  ;;
+            *ubuntu-22*) CODENAME=jammy  ;;
+            *ubuntu-24*) CODENAME=noble  ;;
+            *)           CODENAME=""     ;;
+          esac
+          if [ -n "$CODENAME" ]; then
+            reprepro -b /repo/apt includedeb "$CODENAME" "$DEB" || true
+          fi
+        done
+
+      - aws s3 sync /repo/apt/ "s3://${APT_BUCKET}/${EFFECTIVE_ENV}/" --delete
+
+      # ── YUM repo (createrepo_c) ─────────────────────────────────────────────
+      - mkdir -p /repo/yum
+
+      - |
+        for TARGET in epel-8-x86_64 epel-8-aarch64 epel-9-x86_64 epel-9-aarch64 epel-10-x86_64; do
+          SRC="s3://${ARTIFACTS_BUCKET}/${EFFECTIVE_ENV}/packages/${PACKAGE_NAME}/${PACKAGE_VERSION}-${PACKAGE_REVISION}/${TARGET}/"
+          ARCH="${TARGET##*-}"
+          VER="${TARGET#epel-}"
+          VER="${VER%-*}"
+          DEST="/repo/yum/epel/${VER}/${ARCH}"
+          mkdir -p "$DEST"
+          aws s3 sync "$SRC" "$DEST/" --exclude "*.sha256" || true
+          createrepo_c "$DEST" || true
+        done
+
+      - aws s3 sync /repo/yum/ "s3://${YUM_BUCKET}/${EFFECTIVE_ENV}/" --delete
+
+      # ── CloudFront invalidation ─────────────────────────────────────────────
+      - |
+        if [ -n "$CLOUDFRONT_DIST" ]; then
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DIST" \
+            --paths "/${EFFECTIVE_ENV}/*"
+          echo "CloudFront invalidation triggered: $CLOUDFRONT_DIST"
+        else
+          echo "No CloudFront distribution configured — skipping invalidation"
+        fi
+
+      - echo "Repo update complete: ${EFFECTIVE_ENV} / ${PACKAGE_NAME} ${PACKAGE_VERSION}-${PACKAGE_REVISION}"

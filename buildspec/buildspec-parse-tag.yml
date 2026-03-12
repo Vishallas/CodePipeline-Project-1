@@ -1,0 +1,164 @@
+version: 0.2
+# ─────────────────────────────────────────────────────────────────────────────
+# buildspec-parse-tag.yml — Stage 2: Parse git tag, validate, write SSM
+#
+# Replaces Lambda. Receives GIT_TAG as a CodePipeline pipeline variable
+# (injected by EventBridge at pipeline start).
+#
+# Reads:
+#   - GIT_TAG env var  (pipeline variable set by EventBridge)
+#   - packages_source/packages/{name}/METADATA.yml  (version validation)
+#   - SSM /mydbops/cicd/build/S3_BUCKET             (static config)
+#
+# Writes to SSM (dynamic build vars, overwritten each run):
+#   - /mydbops/cicd/build/PACKAGE_NAME
+#   - /mydbops/cicd/build/PACKAGE_VERSION
+#   - /mydbops/cicd/build/PACKAGE_REVISION
+#   - /mydbops/cicd/build/PG_MAJOR
+#   - /mydbops/cicd/build/GIT_TAG
+#   - /mydbops/cicd/build/IS_RC
+#
+# Exports as CodeBuild pipeline variables (namespace: ParseTag):
+#   PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION, PG_MAJOR, IS_RC
+# ─────────────────────────────────────────────────────────────────────────────
+
+env:
+  # Static infrastructure config — read from SSM, never change per build
+  parameter-store:
+    S3_BUCKET:   /mydbops/cicd/build/S3_BUCKET
+    ECR_REGION:  /mydbops/cicd/ecr/region
+
+  # These are exported back to the pipeline for downstream stages
+  exported-variables:
+    - PACKAGE_NAME
+    - PACKAGE_VERSION
+    - PACKAGE_REVISION
+    - PG_MAJOR
+    - IS_RC
+
+phases:
+  install:
+    commands:
+      - pip3 install --quiet pyyaml
+
+  build:
+    commands:
+      # ── Step 1: Parse the git tag ──────────────────────────────────────────
+      # GIT_TAG is set by EventBridge when it starts the pipeline.
+      # Format: pg{N}/{package-name}-{version}-{revision}[-rcN]
+      # Examples:
+      #   pg14/postgresql-14-14.21-1
+      #   pg14/postgresql-14-pgvector-0.7.4-1
+      #   pg14/postgresql-14-14.22-1-rc1
+      - |
+        python3 - "$GIT_TAG" <<'PYEOF'
+        import sys, re, os
+
+        tag = sys.argv[1]
+        if not tag:
+            print("ERROR: GIT_TAG is empty — was this pipeline triggered by EventBridge?",
+                  file=sys.stderr)
+            sys.exit(1)
+
+        # Strip prefix (pg14/ or tools/)
+        parts = tag.split('/', 1)
+        if len(parts) != 2:
+            print(f"ERROR: Tag must be prefix/rest, got: {tag}", file=sys.stderr)
+            sys.exit(1)
+
+        prefix, rest = parts
+        is_pg = prefix.startswith('pg')
+        pg_major = prefix[2:] if is_pg else "0"
+
+        # Parse: {package-name}-{version}-{revision}[-rcN]
+        # version always matches \d+\.\d+[\d.]* ; revision is pure \d+
+        m = re.match(r'^(.+)-(\d+\.\d+[\d.]*)-(\d+)(-rc\d+)?$', rest)
+        if not m:
+            print(f"ERROR: Cannot parse tag body: {rest}", file=sys.stderr)
+            print("Expected: {package-name}-{version}-{revision}[-rcN]", file=sys.stderr)
+            sys.exit(1)
+
+        pkg_name = m.group(1)
+        version  = m.group(2)
+        revision = m.group(3)
+        rc_suffix = m.group(4) or ""
+        is_rc = "true" if rc_suffix else "false"
+
+        print(f"Parsed tag: {tag}")
+        print(f"  PACKAGE_NAME    = {pkg_name}")
+        print(f"  PACKAGE_VERSION = {version}")
+        print(f"  PACKAGE_REVISION= {revision}")
+        print(f"  PG_MAJOR        = {pg_major}")
+        print(f"  IS_RC           = {is_rc}")
+
+        # Write to shell env file for next steps
+        with open('/tmp/parsed_tag.env', 'w') as f:
+            f.write(f'export PACKAGE_NAME="{pkg_name}"\n')
+            f.write(f'export PACKAGE_VERSION="{version}"\n')
+            f.write(f'export PACKAGE_REVISION="{revision}"\n')
+            f.write(f'export PG_MAJOR="{pg_major}"\n')
+            f.write(f'export IS_RC="{is_rc}"\n')
+        PYEOF
+      - source /tmp/parsed_tag.env
+
+      # ── Step 2: Validate version against METADATA.yml ─────────────────────
+      - |
+        METADATA="${CODEBUILD_SRC_DIR}/packages/${PACKAGE_NAME}/METADATA.yml"
+        if [[ ! -f "$METADATA" ]]; then
+          echo "ERROR: METADATA.yml not found at: $METADATA"
+          echo "  Package '${PACKAGE_NAME}' does not exist on this branch."
+          exit 1
+        fi
+      - |
+        python3 - "$CODEBUILD_SRC_DIR/packages/${PACKAGE_NAME}/METADATA.yml" \
+                  "$PACKAGE_NAME" "$PACKAGE_VERSION" <<'PYEOF'
+        import sys, yaml
+
+        metadata_file = sys.argv[1]
+        expected_name = sys.argv[2]
+        expected_ver  = sys.argv[3]
+
+        with open(metadata_file) as f:
+            data = yaml.safe_load(f)
+
+        actual_name = data['package']['name']
+        actual_ver  = str(data['package']['version'])
+
+        errors = []
+        if actual_name != expected_name:
+            errors.append(f"Name mismatch: tag has '{expected_name}', METADATA.yml has '{actual_name}'")
+        if actual_ver != expected_ver:
+            errors.append(f"Version mismatch: tag has '{expected_ver}', METADATA.yml has '{actual_ver}'")
+
+        if errors:
+            for e in errors:
+                print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Validation passed: {actual_name} {actual_ver}")
+        PYEOF
+
+      # ── Step 3: Write dynamic build vars to SSM ───────────────────────────
+      # These are overwritten on every pipeline run. Downstream stages read them.
+      - |
+        REGION="${ECR_REGION:-us-east-1}"
+        for param in \
+            "PACKAGE_NAME:$PACKAGE_NAME" \
+            "PACKAGE_VERSION:$PACKAGE_VERSION" \
+            "PACKAGE_REVISION:$PACKAGE_REVISION" \
+            "PG_MAJOR:$PG_MAJOR" \
+            "GIT_TAG:$GIT_TAG" \
+            "IS_RC:$IS_RC"; do
+          key="${param%%:*}"
+          val="${param#*:}"
+          aws ssm put-parameter \
+            --region "$REGION" \
+            --name "/mydbops/cicd/build/${key}" \
+            --value "$val" \
+            --type String \
+            --overwrite \
+            --no-cli-pager
+          echo "SSM written: /mydbops/cicd/build/${key} = ${val}"
+        done
+
+      - echo "ParseTag complete — PACKAGE_NAME=${PACKAGE_NAME} VERSION=${PACKAGE_VERSION}-${PACKAGE_REVISION} IS_RC=${IS_RC}"

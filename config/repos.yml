@@ -6,13 +6,13 @@ s3:
   # Bucket for build artifacts (packages, sha256 sidecars)
   artifacts_bucket: mydbops-cicd-artifacts
   # Bucket serving the APT repository (can be same as artifacts_bucket)
-  apt_bucket: mydbops-apt-repo
+  apt_bucket: mydbops-cicd-artifacts
   # Bucket serving the YUM repository
-  yum_bucket: mydbops-yum-repo
+  yum_bucket: mydbops-cicd-artifacts
 
 ecr:
   account_id: ""          # Set via SSM /mydbops/cicd/ecr/account_id
-  region: us-east-1
+  region: ap-south-1
   repository: mydbops/pg-build
 
 pulp:
