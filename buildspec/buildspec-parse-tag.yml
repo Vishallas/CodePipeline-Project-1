@@ -99,7 +99,7 @@ phases:
             f.write(f'export PG_MAJOR="{pg_major}"\n')
             f.write(f'export IS_RC="{is_rc}"\n')
         PYEOF
-      - source /tmp/parsed_tag.env
+      - . /tmp/parsed_tag.env
 
       # ── Step 2: Validate version against METADATA.yml ─────────────────────
       - |
