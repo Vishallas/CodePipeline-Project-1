@@ -85,7 +85,7 @@ resource "aws_codepipeline" "this" {
 
       configuration = {
         ProjectName   = var.codebuild_parse_tag_project
-        PrimarySource = "packages_source"
+        PrimarySource = "platform_source"
         # Pass the pipeline variable GIT_TAG into the CodeBuild environment
         EnvironmentVariables = jsonencode([
           {
@@ -113,7 +113,7 @@ resource "aws_codepipeline" "this" {
 
       configuration = {
         ProjectName   = var.codebuild_ubuntu_amd64_project
-        PrimarySource = "packages_source"
+        PrimarySource = "platform_source"
       }
     }
 
@@ -128,7 +128,7 @@ resource "aws_codepipeline" "this" {
 
       configuration = {
         ProjectName   = var.codebuild_ubuntu_arm64_project
-        PrimarySource = "packages_source"
+        PrimarySource = "platform_source"
       }
     }
 
@@ -143,7 +143,7 @@ resource "aws_codepipeline" "this" {
 
       configuration = {
         ProjectName   = var.codebuild_rpm_amd64_project
-        PrimarySource = "packages_source"
+        PrimarySource = "platform_source"
       }
     }
 
@@ -158,7 +158,7 @@ resource "aws_codepipeline" "this" {
 
       configuration = {
         ProjectName   = var.codebuild_rpm_arm64_project
-        PrimarySource = "packages_source"
+        PrimarySource = "platform_source"
       }
     }
   }
@@ -177,7 +177,7 @@ resource "aws_codepipeline" "this" {
 
       configuration = {
         ProjectName   = var.codebuild_test_project
-        PrimarySource = "packages_source"
+        PrimarySource = "platform_source"
       }
     }
   }
@@ -192,10 +192,11 @@ resource "aws_codepipeline" "this" {
       owner           = "AWS"
       provider        = "CodeBuild"
       version         = "1"
-      input_artifacts = ["packages_source"]
+      input_artifacts = ["packages_source", "platform_source"]
 
       configuration = {
-        ProjectName = var.codebuild_repo_updater_project
+        ProjectName   = var.codebuild_repo_updater_project
+        PrimarySource = "platform_source"
       }
     }
   }
@@ -227,10 +228,11 @@ resource "aws_codepipeline" "this" {
       owner           = "AWS"
       provider        = "CodeBuild"
       version         = "1"
-      input_artifacts = ["packages_source"]
+      input_artifacts = ["packages_source", "platform_source"]
 
       configuration = {
-        ProjectName = var.codebuild_repo_updater_project
+        ProjectName   = var.codebuild_repo_updater_project
+        PrimarySource = "platform_source"
         EnvironmentVariables = jsonencode([
           {
             name  = "BUILD_ENV"

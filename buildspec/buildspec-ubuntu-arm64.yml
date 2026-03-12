@@ -25,8 +25,8 @@ phases:
 
   pre_build:
     commands:
-      - export PACKAGES_DIR="$CODEBUILD_SRC_DIR"
-      - export PLATFORM_DIR="$CODEBUILD_SRC_DIR_platform_source"
+      - export PLATFORM_DIR="$CODEBUILD_SRC_DIR"
+      - export PACKAGES_DIR="$CODEBUILD_SRC_DIR_packages_source"
       - source "$PLATFORM_DIR/scripts/lib/common.sh"
       - ecr_login "$ECR_REGION" "$ECR_ACCOUNT_ID"
 
