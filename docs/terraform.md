@@ -105,8 +105,8 @@ aws_account_id = "123456789012"
 
 github_connection_arn = "arn:aws:codestar-connections:ap-south-1:123456789012:connection/..."
 
-packaging_repo = "mydbops/mydbops-pg-packaging"
-platform_repo  = "mydbops/mydbops-pg-platform"
+packaging_repo = "mydbopsllp/mydbops-pg-packaging"
+platform_repo  = "mydbopsllp/mydbops-pg-platform"
 
 artifacts_bucket_name = "mydbops-cicd-artifacts"
 apt_bucket_name       = "mydbops-apt-repo"

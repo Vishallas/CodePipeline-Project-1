@@ -27,13 +27,13 @@ variable "github_connection_arn" {
 variable "packaging_repo" {
   description = "GitHub full repo ID for mydbops-pg-packaging (org/repo)"
   type        = string
-  default     = "mydbops/mydbops-pg-packaging"
+  default     = "mydbopsllp/mydbops-pg-packaging"
 }
 
 variable "platform_repo" {
   description = "GitHub full repo ID for mydbops-pg-platform (org/repo)"
   type        = string
-  default     = "mydbops/mydbops-pg-platform"
+  default     = "mydbopsllp/mydbops-pg-platform"
 }
 
 # ── S3 ────────────────────────────────────────────────────────────────────

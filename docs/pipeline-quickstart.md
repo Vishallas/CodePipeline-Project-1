@@ -24,8 +24,8 @@ docker, git, aws cli, python3, curl
 # - S3 buckets: mydbops-cicd-artifacts (staging + production paths)
 
 # Clone both repos side by side
-git clone git@github.com:mydbops/mydbops-pg-platform.git
-git clone git@github.com:mydbops/mydbops-pg-packaging.git
+git clone github.com/mydbopsllp/mydbops-pg-platform.git
+git clone github.com/mydbopsllp/mydbops-pg-packaging.git
 cd mydbops-pg-platform
 ```
 

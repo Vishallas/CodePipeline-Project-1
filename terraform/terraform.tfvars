@@ -11,8 +11,8 @@ aws_account_id = "145687388766"
 # Then complete OAuth in Console → Developer Tools → Connections
 # github_connection_arn = "arn:aws:codeconnections:ap-south-1:145687388766:connection/f4c35638-d363-42d1-81b3-d6d252a9d49a"
 github_connection_arn = "arn:aws:codeconnections:ap-south-1:145687388766:connection/bf0fa12e-f315-422d-b2eb-1732432932fc"
-packaging_repo = "mydbops/mydbops-pg-packaging"
-platform_repo  = "mydbops/mydbops-pg-platform"
+packaging_repo = "mydbopsllp/mydbops-pg-packaging"
+platform_repo  = "mydbopsllp/mydbops-pg-platform"
 
 # S3 bucket names — must be globally unique
 artifacts_bucket_name = "mydbops-cicd-artifacts-1"
