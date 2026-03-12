@@ -1,0 +1,33 @@
+# config/pg-versions.yml — Master PostgreSQL version registry
+# One entry per supported PG major version.
+# Fields:
+#   major           — integer PG major version
+#   eol_date        — upstream community EOL date (YYYY-MM-DD)
+#   pipeline_enabled — false = no builds triggered, pipeline disabled
+#   branch          — branch name in mydbops-pg-packaging repo
+#   status          — stable | rc | eol
+
+pg_versions:
+  - major: 17
+    eol_date: "2029-11-08"
+    pipeline_enabled: true
+    branch: pg17
+    status: stable
+
+  - major: 16
+    eol_date: "2028-11-09"
+    pipeline_enabled: true
+    branch: pg16
+    status: stable
+
+  - major: 15
+    eol_date: "2027-11-11"
+    pipeline_enabled: true
+    branch: pg15
+    status: stable
+
+  - major: 14
+    eol_date: "2026-11-12"
+    pipeline_enabled: true
+    branch: pg14
+    status: stable

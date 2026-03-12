@@ -1,0 +1,498 @@
+#!/bin/bash
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-sbuild.sh — Docker + sbuild + mmdebstrap build environment driver
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Builds DEB packages inside Docker using sbuild + mmdebstrap for:
+#   ✓ Isolated chroots (mmdebstrap)
+#   ✓ Reproducible builds (sbuild)
+#   ✓ Automatic dependency resolution
+#   ✓ Fast chroot creation (5-15 min vs 20-40 min)
+#
+# Architecture:
+#   Docker Container (minimal ~500MB):
+#   ├── mmdebstrap: Fast chroot creation
+#   ├── sbuild: Build management
+#   └── Build tools
+#
+#   Build Chroots (created dynamically):
+#   ├── Base system (minimal)
+#   ├── Build dependencies (installed per-build)
+#   └── Build happens here (isolated)
+#
+# Usage:
+#   ./scripts/build-env.sh build-all-deb --builder docker-sbuild --pg-major 16 --distro bookworm
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+DRIVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${DRIVER_DIR}/common.sh"
+
+# ─── Configuration ─────────────────────────────────────────────────────────
+
+DOCKER_CMD="${DOCKER_CMD:-docker}"
+DOCKER_IMAGE_PREFIX="${DOCKER_IMAGE_PREFIX:-postgresql-build}"
+
+# ─── Dependency Check ──────────────────────────────────────────────────────
+
+builder_docker_sbuild_check_deps() {
+    if ! command -v "$DOCKER_CMD" &>/dev/null; then
+        if command -v podman &>/dev/null; then
+            DOCKER_CMD="podman"
+            log_info "Using podman as Docker alternative"
+        else
+            log_error "Neither docker nor podman found"
+            return 1
+        fi
+    fi
+    log_success "Docker sbuild environment ready (${DOCKER_CMD})"
+    return 0
+}
+
+# ─── Helpers ───────────────────────────────────────────────────────────────
+
+_docker_image_tag() {
+    local distro="$1"
+    case "$distro" in
+        bookworm)  echo "debian-bookworm" ;;
+        bullseye)  echo "debian-bullseye" ;;
+        trixie)    echo "debian-trixie" ;;
+        jammy)     echo "ubuntu-jammy" ;;
+        focal)     echo "ubuntu-focal" ;;
+        noble)     echo "ubuntu-noble" ;;
+        *)  echo "$distro" ;;
+    esac
+}
+
+_docker_ensure_image() {
+    local distro="$1"
+    local tag=$(_docker_image_tag "$distro")
+    local full_image="${DOCKER_IMAGE_PREFIX}:${tag}"
+
+    if ! ${DOCKER_CMD} image inspect "$full_image" &>/dev/null; then
+        local dockerfile_dir="${BUILDENV_PROJECT_ROOT}/docker/${tag}"
+        if [[ -f "${dockerfile_dir}/Dockerfile" ]]; then
+            log_info "Building Docker image: ${full_image}"
+            if ! ${DOCKER_CMD} build -t "$full_image" "${dockerfile_dir}"; then
+                log_error "Failed to build Docker image"
+                return 1
+            fi
+        else
+            log_error "Dockerfile not found: ${dockerfile_dir}/Dockerfile"
+            return 1
+        fi
+    fi
+    echo "$full_image"
+}
+
+# ─── Build DEB with sbuild + mmdebstrap ────────────────────────────────────
+
+builder_docker_sbuild_build_deb() {
+    local package="$1"
+    local distro="$2"
+    local pg_major="$3"
+    local pg_full="$4"
+    local pg_release="$5"
+    local output_base="${6:-${BUILDENV_PROJECT_ROOT}/output}"
+
+    local full_image
+    full_image=$(_docker_ensure_image "$distro") || return 1
+
+    local build_dir
+    build_dir=$(init_build_output "docker-sbuild" "$distro" "$package" "$output_base")
+    chmod -R a+rwX "${build_dir}"
+
+    local log_file
+    log_file=$(get_build_log "docker-sbuild" "$distro" "$package" "$output_base")
+
+    local make_jobs
+    make_jobs=$(nproc 2>/dev/null || echo 4)
+
+    # Determine package source directory
+    local pkg_dir=""
+    if [[ -d "${BUILDENV_PROJECT_ROOT}/debian/main/non-common/${package}/${distro}" ]]; then
+        pkg_dir="debian/main/non-common/${package}/${distro}"
+    elif [[ -d "${BUILDENV_PROJECT_ROOT}/debian/main/non-common/${package}/main" ]]; then
+        pkg_dir="debian/main/non-common/${package}/main"
+    else
+        log_error "Package directory not found for: ${package}"
+        return 1
+    fi
+
+    local container_workdir="/build/${pkg_dir}"
+
+    log_build "[docker-sbuild] ${package} (PG${pg_major} ${pg_full}-${pg_release}) -> ${distro}"
+    log_info "Image:    ${full_image}"
+    log_info "Output:   ${build_dir}"
+    log_info "Log:      ${log_file}"
+    log_info "Method:   sbuild + mmdebstrap chroot"
+
+    ${DOCKER_CMD} run --rm \
+        -v "${BUILDENV_PROJECT_ROOT}:/build" \
+        -v "${build_dir}:/output" \
+        -w "${container_workdir}" \
+        --privileged \
+        -e HOME=/home/builder \
+        -e DEB_BUILD_OPTIONS="parallel=${make_jobs}" \
+        "$full_image" \
+        bash -c "
+            set -euo pipefail
+            echo '═══════════════════════════════════════════════════════════'
+            echo '  sbuild + mmdebstrap Build Environment'
+            echo '═══════════════════════════════════════════════════════════'
+            echo ''
+            echo 'PostgreSQL: ${pg_full}'
+            echo 'Distribution: ${distro}'
+            echo 'Build options: parallel=${make_jobs}'
+            echo ''
+
+            echo '─ Step 1: Verify sbuild + mmdebstrap infrastructure'
+            if ! command -v sbuild &>/dev/null; then
+                echo 'ERROR: sbuild not found in container'
+                exit 1
+            fi
+            echo '  ✓ sbuild: '
+            sbuild --version 2>&1 | head -1 || true
+
+            if ! command -v mmdebstrap &>/dev/null; then
+                echo 'ERROR: mmdebstrap not found in container'
+                exit 1
+            fi
+            echo '  ✓ mmdebstrap: installed'
+
+            echo ''
+            echo '─ Step 2: Initialize mmdebstrap chroot (if needed)'
+            CHROOT_NAME=\"${distro}-amd64-sbuild\"
+            CHROOT_PATH=\"/srv/sbuild/\${CHROOT_NAME}\"
+
+            if [ ! -d \"\${CHROOT_PATH}\" ]; then
+                echo \"  Creating chroot: \${CHROOT_NAME}\"
+                echo \"  Location: \${CHROOT_PATH}\"
+                echo \"  Method: mmdebstrap\"
+                echo \"  Variant: buildd (minimal + build tools)\"
+                echo \"  This may take 5-15 minutes (mmdebstrap is 5-10x faster than debootstrap)...\"
+                echo ''
+
+                if ! command -v mmdebstrap &>/dev/null; then
+                    echo \"ERROR: mmdebstrap not found in container\"
+                    echo \"Chroot creation failed\"
+                    exit 1
+                fi
+
+                echo \"  Creating chroot with mmdebstrap...\"
+                if ! sudo mmdebstrap --mode=root --variant=buildd --include=build-essential,fakeroot,devscripts,lintian ${distro} \${CHROOT_PATH} https://deb.debian.org/debian 2>&1; then
+                    echo \"ERROR: mmdebstrap chroot creation failed\"
+                    exit 1
+                fi
+                echo \"  ✓ Chroot created successfully\"
+            else
+                echo \"  ✓ Chroot already exists: \${CHROOT_NAME}\"
+                SIZE=\$(du -sh \${CHROOT_PATH} 2>/dev/null | cut -f1)
+                echo \"  Size: \${SIZE}\"
+                echo \"  Chroot will be reused for faster builds\"
+            fi
+
+            echo ''
+            echo '═══════════════════════════════════════════════════════════'
+            echo '  Starting DEB Build with sbuild'
+            echo '═══════════════════════════════════════════════════════════'
+            echo ''
+
+            BUILD_TEMP=\$(mktemp -d /tmp/build-XXXXXX)
+            trap 'rm -rf \$BUILD_TEMP' EXIT
+            cd \$BUILD_TEMP
+
+            echo '==> Preparing source package'
+            mkdir -p src
+            cd src
+
+            if [ ! -f postgresql-${pg_full}.tar.bz2 ]; then
+                wget -q https://ftp.postgresql.org/pub/source/v${pg_full}/postgresql-${pg_full}.tar.bz2 || true
+            fi
+
+            if [ -f postgresql-${pg_full}.tar.bz2 ]; then
+                # tar -xjf postgresql-${pg_full}.tar.bz2
+                mv postgresql-${pg_full}.tar.bz2 postgresql-${pg_major}_${pg_full}.orig.tar.bz2
+            else
+                echo \"error downloading source tarball: postgresql-${pg_full}.tar.bz2\"
+                exit 2
+                
+            fi
+
+            mkdir postgresql-${pg_full}
+            cd postgresql-${pg_full}
+
+            
+            echo '==> Preparing debian packaging'
+            mkdir -p debian
+            PKG_SRC=\"${container_workdir}/debian\"
+
+            if [ ! -d \"\$PKG_SRC\" ]; then
+                echo \"ERROR: Packaging source missing at \$PKG_SRC\"
+                echo \"Expected path: \$PKG_SRC\"
+                echo \"Current dir: \$(pwd)\"
+                echo \"Container workdir: ${container_workdir}\"
+                ls -la \"${container_workdir}\" || echo \"Container workdir does not exist\"
+                exit 1
+            fi
+
+            # Copy debian files (follow symlinks to get actual content)
+            echo \"Copying debian files from \$PKG_SRC to debian/\"
+            cp -rLv \"\$PKG_SRC\"/* debian/ || {
+                echo \"ERROR: Failed to copy debian files\"
+                echo \"PKG_SRC contents:\"
+                ls -la \"\$PKG_SRC\" || true
+                exit 1
+            }
+
+            # Verify changelog was copied
+            if [ ! -f debian/changelog ]; then
+                echo \"ERROR: debian/changelog not found after copy\"
+                echo \"debian/ directory contents:\"
+                ls -la debian/
+                exit 1
+            fi
+
+            echo '==> Updating changelog version to match the source being built'
+            echo \"Current first line of changelog:\"
+            head -1 debian/changelog
+            echo \"Updating to version: ${pg_full}-${pg_release}\"
+
+            # Use a safer approach: replace the version string using head -1 and reconstruction
+            FIRST_LINE=\$(head -1 debian/changelog)
+            NEW_FIRST_LINE=\"postgresql-${pg_major} (${pg_full}-${pg_release}) unstable; urgency=medium\"
+            echo \"Replacing: \$FIRST_LINE\"
+            echo \"With:      \$NEW_FIRST_LINE\"
+
+            tail -n +2 debian/changelog > debian/changelog.tmp
+            {
+                echo \"\$NEW_FIRST_LINE\"
+                cat debian/changelog.tmp
+            } > debian/changelog.new
+            mv debian/changelog.new debian/changelog
+            rm debian/changelog.tmp
+
+            echo \"Changelog updated. New first line:\"
+            head -1 debian/changelog
+
+            dpkg-buildpackage -S -us -uc -d
+
+            echo '==> Creating sbuild chroot with sbuild-createchroot'
+            CHROOT_NAME=\"${distro}-amd64\"
+            CHROOT_PATH=\"/srv/sbuild/${distro}-amd64-sbuild\"
+
+            # Check if chroot is properly registered in schroot
+            CHROOT_EXISTS=0
+            if schroot -l 2>/dev/null | grep -q \"^chroot:\${CHROOT_NAME}\"; then
+                echo \"Chroot \${CHROOT_NAME} already exists and is registered\"
+                CHROOT_EXISTS=1
+            fi
+
+            # If chroot directory exists but isn't registered, clean it up
+            if [ ! \$CHROOT_EXISTS -eq 1 ] && [ -d \"\$CHROOT_PATH\" ]; then
+                echo \"Found orphaned chroot directory, cleaning up: \$CHROOT_PATH\"
+                sudo rm -rf \"\$CHROOT_PATH\" || {
+                    echo \"ERROR: Failed to remove orphaned chroot directory\"
+                    exit 1
+                }
+            fi
+
+            # Create chroot if it doesn't exist
+            if [ ! \$CHROOT_EXISTS -eq 1 ]; then
+                echo \"Building chroot \${CHROOT_NAME} with mmdebstrap...\"
+                sudo sbuild-createchroot --include=devscripts,equivs,ccache,eatmydata \
+                    --arch amd64 \
+                    ${distro} \
+                    \"\$CHROOT_PATH\" 2>&1 || {
+                    echo \"ERROR: Failed to create sbuild chroot\"
+                    echo \"Checking debootstrap log...\"
+                    if [ -f \"\$CHROOT_PATH/debootstrap/debootstrap.log\" ]; then
+                        tail -50 \"\$CHROOT_PATH/debootstrap/debootstrap.log\"
+                    fi
+                    exit 1
+                }
+                echo \"Chroot created successfully\"
+            fi
+
+            echo '==> Building with sbuild'
+
+            export DEB_BUILD_OPTIONS=\"parallel=${make_jobs}\"
+
+            # Run sbuild using the prepared chroot
+            SBUILD_RESULT=0
+            sbuild -d \${CHROOT_NAME} \
+                --arch-any \
+                --no-arch-all \
+                --verbose || SBUILD_RESULT=\$?
+
+            echo \"==> sbuild result: \$SBUILD_RESULT\"
+
+            echo '==> Collecting artifacts'
+            find \$BUILD_TEMP -maxdepth 2 -name '*.deb' -type f \
+                -exec cp -v {} /output/DEBS/ \; 2>/dev/null || true
+
+            if [ -d /var/lib/sbuild/build ]; then
+                find /var/lib/sbuild/build -maxdepth 2 -name '*.deb' -type f \
+                    -exec cp -v {} /output/DEBS/ \; 2>/dev/null || true
+            fi
+
+            echo '==> Build Complete'
+            DEB_COUNT=\$(find /output/DEBS/ -maxdepth 1 -name '*.deb' -type f 2>/dev/null | wc -l)
+            echo \"DEB files created: \$DEB_COUNT\"
+            ls -lh /output/DEBS/ 2>/dev/null | tail -5 || true
+
+            # Exit with sbuild result if it failed, otherwise check if .deb files were created
+            if [ \$SBUILD_RESULT -ne 0 ]; then
+                echo \"sbuild failed with exit code \$SBUILD_RESULT\"
+                exit 1
+            fi
+
+            if [ \$DEB_COUNT -eq 0 ]; then
+                echo \"ERROR: No .deb files were created\"
+                exit 1
+            fi
+
+            exit 0
+        " 2>&1 | tee "${log_file}"
+
+    local exit_code=${PIPESTATUS[0]}
+
+    if [[ $exit_code -eq 0 ]]; then
+        log_success "[docker-sbuild] DEB ${package} for ${distro} succeeded"
+        return 0
+    else
+        log_error "[docker-sbuild] DEB ${package} for ${distro} FAILED"
+        return 1
+    fi
+}
+
+# ─── Shell ─────────────────────────────────────────────────────────────────
+
+builder_docker_sbuild_shell() {
+    local distro="${ARG_DISTRO:-bookworm}"
+    local full_image
+    full_image=$(_docker_ensure_image "$distro") || return 1
+
+    log_info "Opening shell in Docker container"
+    log_info "Distribution: ${distro}"
+
+    ${DOCKER_CMD} run --rm -it \
+        -v "${BUILDENV_PROJECT_ROOT}:/build" \
+        -w "/build" \
+        -e HOME=/home/builder \
+        "$full_image" \
+        /bin/bash
+}
+
+# ─── Setup ─────────────────────────────────────────────────────────────────
+
+builder_docker_sbuild_setup() {
+    local distro="${ARG_DISTRO:-bookworm}"
+    local full_image
+    full_image=$(_docker_ensure_image "$distro") || return 1
+
+    log_info "Setting up sbuild + mmdebstrap for: ${distro}"
+    log_info "This creates the mmdebstrap chroot (takes 5-15 minutes)..."
+    echo ""
+
+    ${DOCKER_CMD} run --rm -it \
+        -v "${BUILDENV_PROJECT_ROOT}:/build" \
+        -w "/build" \
+        -e HOME=/home/builder \
+        "$full_image" \
+        bash -c "
+            echo '═══════════════════════════════════════════════════════════'
+            echo '  sbuild + mmdebstrap Setup'
+            echo '═══════════════════════════════════════════════════════════'
+            echo ''
+
+            echo '─ Checking Tools'
+            echo ''
+            echo '  sbuild:'
+            sbuild --version 2>&1 | head -3 || echo '    NOT FOUND'
+            echo ''
+            echo '  mmdebstrap:'
+            mmdebstrap --version 2>&1 | head -1 || echo '    NOT FOUND'
+            echo ''
+            echo '  schroot:'
+            schroot --version 2>&1 | head -1 || echo '    NOT FOUND'
+            echo ''
+
+            echo '─ Initializing mmdebstrap Chroot'
+            echo ''
+            CHROOT_NAME=\"${distro}-amd64-sbuild\"
+            CHROOT_PATH=\"/srv/sbuild/\${CHROOT_NAME}\"
+
+            if [ -d \"\${CHROOT_PATH}\" ]; then
+                echo \"✓ Chroot already exists: \${CHROOT_NAME}\"
+                SIZE=\$(du -sh \${CHROOT_PATH} 2>/dev/null | cut -f1)
+                echo \"  Location: \${CHROOT_PATH}\"
+                echo \"  Size: \${SIZE}\"
+                echo \"  Chroot will be reused for faster builds\"
+            else
+                echo \"Creating chroot: \${CHROOT_NAME}\"
+                echo \"Location: \${CHROOT_PATH}\"
+                echo \"Method: mmdebstrap only (fast minimal installation)\"
+                echo \"Variant: buildd\"
+                echo ''
+                echo \"Please wait, this takes 5-15 minutes...\"
+                echo ''
+
+                if ! command -v mmdebstrap &>/dev/null; then
+                    echo \"ERROR: mmdebstrap is required but not found\"
+                    echo \"Install with: apt install mmdebstrap\"
+                    exit 1
+                fi
+
+                echo \"Creating sbuild chroot with mmdebstrap...\"
+                # mmdebstrap with fakechroot mode for containerized environments
+                mmdebstrap --mode=fakechroot \
+                    --include=build-essential,fakeroot,devscripts,lintian \
+                    \${distro} \${CHROOT_PATH} https://deb.debian.org/debian
+
+                echo ''
+                echo \"✓ Chroot created successfully\"
+                SIZE=\$(du -sh \${CHROOT_PATH} | cut -f1)
+                echo \"✓ Chroot size: \${SIZE}\"
+            fi
+
+            echo ''
+            echo '─ Configuration'
+            echo ''
+            echo '  sbuild: uses mmdebstrap for fast chroot creation'
+            echo '  Method: Direct mmdebstrap invocation (no debootstrap wrapper)'
+            echo ''
+
+            echo '═══════════════════════════════════════════════════════════'
+            echo '  Ready for builds!'
+            echo '═══════════════════════════════════════════════════════════'
+        "
+}
+
+# ─── Clean ─────────────────────────────────────────────────────────────────
+
+builder_docker_sbuild_clean() {
+    local distro="${ARG_DISTRO:-bookworm}"
+    local full_image
+    full_image=$(_docker_ensure_image "$distro") || return 1
+
+    log_info "Cleaning sbuild chroots"
+
+    ${DOCKER_CMD} run --rm -it \
+        -v "${BUILDENV_PROJECT_ROOT}:/build" \
+        -w "/build" \
+        -e HOME=/home/builder \
+        "$full_image" \
+        bash -c "
+            if command -v sbuild-destroychroot &>/dev/null; then
+                sbuild-destroychroot ${distro}-amd64-sbuild 2>/dev/null || true
+            fi
+            echo 'Chroots cleaned'
+        "
+}
+
+export -f builder_docker_sbuild_check_deps
+export -f builder_docker_sbuild_build_deb
+export -f builder_docker_sbuild_shell
+export -f builder_docker_sbuild_setup
+export -f builder_docker_sbuild_clean

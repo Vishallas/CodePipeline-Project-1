@@ -1,0 +1,47 @@
+version: 0.2
+# ─────────────────────────────────────────────────────────────────────────────
+# Mydbops CodeBuild Buildspec — RPM x86_64 → .rpm packages
+# Target: EPEL 8/9/10 + Fedora 42/43 on x86_64
+# Two script invocations: one for epel, one for fedora.
+# All build logic lives in build-package.sh — do not add logic here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+env:
+  parameter-store:
+    PACKAGE_NAME:    /mydbops/cicd/build/PACKAGE_NAME
+    PACKAGE_VERSION: /mydbops/cicd/build/PACKAGE_VERSION
+    S3_BUCKET:       /mydbops/cicd/build/S3_BUCKET
+    BUILD_ENV:       /mydbops/cicd/build/BUILD_ENV
+    ECR_ACCOUNT_ID:  /mydbops/cicd/ecr/account_id
+    ECR_REGION:      /mydbops/cicd/ecr/region
+  secrets-manager:
+    GPG_PRIVATE_KEY: mydbops/cicd/gpg-signing-key
+
+phases:
+  install:
+    commands:
+      - yum install -y docker python3 python3-pyyaml jq curl
+
+  pre_build:
+    commands:
+      - export PACKAGES_DIR="$CODEBUILD_SRC_DIR"
+      - export PLATFORM_DIR="$CODEBUILD_SRC_DIR_platform_source"
+      - source "$PLATFORM_DIR/scripts/lib/common.sh"
+      - ecr_login "$ECR_REGION" "$ECR_ACCOUNT_ID"
+
+  build:
+    commands:
+      - |
+        "$PLATFORM_DIR/scripts/build-package.sh" \
+          --package    "$PACKAGE_NAME" \
+          --packages-dir "$PACKAGES_DIR" \
+          --s3-bucket  "$S3_BUCKET" \
+          --env        "$BUILD_ENV" \
+          --os         epel
+      - |
+        "$PLATFORM_DIR/scripts/build-package.sh" \
+          --package    "$PACKAGE_NAME" \
+          --packages-dir "$PACKAGES_DIR" \
+          --s3-bucket  "$S3_BUCKET" \
+          --env        "$BUILD_ENV" \
+          --os         fedora
