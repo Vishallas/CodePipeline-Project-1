@@ -695,6 +695,8 @@ module "pg_pipeline" {
   artifacts_bucket      = var.artifacts_bucket_name
   github_connection_arn = var.github_connection_arn
   packaging_repo        = var.packaging_repo
+  # Extract just the repo name (after the "/") for EventBridge repositoryName filter
+  packaging_repo_name   = split("/", var.packaging_repo)[1]
   platform_repo         = var.platform_repo
   codepipeline_role_arn = aws_iam_role.codepipeline.arn
   eventbridge_role_arn  = aws_iam_role.eventbridge.arn

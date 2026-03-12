@@ -244,6 +244,12 @@ resource "aws_codepipeline" "this" {
 }
 
 # ── EventBridge rule — trigger on git tag push ────────────────────────────────
+#
+# AWS renamed CodeStar Connections → CodeConnections. The EventBridge source
+# name varies by connection age: include BOTH to handle either.
+#
+# The repositoryName filter uses only the repo name (no org prefix), which is
+# what the CodeConnections webhook sends in detail.repositoryName.
 
 resource "aws_cloudwatch_event_rule" "tag_trigger" {
   name        = local.eb_rule_name
@@ -252,29 +258,31 @@ resource "aws_cloudwatch_event_rule" "tag_trigger" {
   tags        = var.tags
 
   event_pattern = jsonencode({
-    source      = ["aws.codeconnections"]
+    # Include both source names: old (codestar-connections) and new (codeconnections)
+    source = ["aws.codeconnections", "aws.codestar-connections"]
     "detail-type" = ["Connection Webhook Event"]
     detail = {
-      event         = ["referenceCreated"]
-      referenceType = ["tag"]
-      referenceName = [{ prefix = "pg${var.pg_major}/" }]
+      event          = ["referenceCreated"]
+      referenceType  = ["tag"]
+      referenceName  = [{ prefix = "pg${var.pg_major}/" }]
+      repositoryName = [var.packaging_repo_name]
     }
   })
 }
 
 resource "aws_cloudwatch_event_target" "pipeline" {
-  rule     = aws_cloudwatch_event_rule.tag_trigger.name
-  arn      = "arn:aws:codepipeline:${var.aws_region}:${var.aws_account_id}:${local.pipeline_name}"
-  role_arn = var.eventbridge_role_arn
+  rule      = aws_cloudwatch_event_rule.tag_trigger.name
+  arn       = aws_codepipeline.this.arn   # reference resource directly for correct dependency
+  role_arn  = var.eventbridge_role_arn
   target_id = "pg${var.pg_major}-pipeline"
 
-  # InputTransformer: extract the tag name from the event and pass it as a
-  # pipeline-level variable so ParseTag CodeBuild can read it as $GIT_TAG.
+  # InputTransformer: extract the tag name from the webhook event and inject it
+  # as a V2 pipeline variable so ParseTag CodeBuild receives it as $GIT_TAG.
   input_transformer {
     input_paths = {
       tag = "$.detail.referenceName"
     }
-    # V2 pipeline variables format for StartPipelineExecution
+    # <tag> is replaced with the value from input_paths (a quoted JSON string)
     input_template = "{\"variables\": [{\"name\": \"GIT_TAG\", \"value\": <tag>}]}"
   }
 }

@@ -22,8 +22,14 @@ variable "github_connection_arn" {
 }
 
 variable "packaging_repo" {
-  description = "GitHub full repo ID for mydbops-pg-packaging"
+  description = "GitHub full repo ID for mydbops-pg-packaging (org/repo format)"
   type        = string
+}
+
+variable "packaging_repo_name" {
+  description = "Repository name only (without org prefix) — used in EventBridge filter"
+  type        = string
+  default     = "mydbops-pg-packaging"
 }
 
 variable "platform_repo" {

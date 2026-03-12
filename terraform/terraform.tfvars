@@ -9,8 +9,8 @@ aws_account_id = "145687388766"
 # Get this ARN after running:
 #   aws codestar-connections create-connection --provider-type GitHub --connection-name Mydbopsllp
 # Then complete OAuth in Console → Developer Tools → Connections
-github_connection_arn = "arn:aws:codeconnections:ap-south-1:145687388766:connection/f4c35638-d363-42d1-81b3-d6d252a9d49a"
-
+# github_connection_arn = "arn:aws:codeconnections:ap-south-1:145687388766:connection/f4c35638-d363-42d1-81b3-d6d252a9d49a"
+github_connection_arn = "arn:aws:codeconnections:ap-south-1:145687388766:connection/bf0fa12e-f315-422d-b2eb-1732432932fc"
 packaging_repo = "mydbops/mydbops-pg-packaging"
 platform_repo  = "mydbops/mydbops-pg-platform"
 
