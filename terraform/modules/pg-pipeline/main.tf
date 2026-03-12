@@ -9,6 +9,17 @@ locals {
   pipeline_name = "mydbops-pkg-pg${var.pg_major}"
   branch_name   = "pg${var.pg_major}"
   eb_rule_name  = "mydbops-trigger-pg${var.pg_major}"
+
+  # Dynamic build vars injected from ParseTag pipeline variables.
+  # Using #{ParseTag.*} keeps each pipeline execution isolated — no SSM race
+  # condition when pg14 and pg16 pipelines run simultaneously.
+  build_env_vars = jsonencode([
+    { name = "PACKAGE_NAME",     value = "#{ParseTag.PACKAGE_NAME}",     type = "PLAINTEXT" },
+    { name = "PACKAGE_VERSION",  value = "#{ParseTag.PACKAGE_VERSION}",  type = "PLAINTEXT" },
+    { name = "PACKAGE_REVISION", value = "#{ParseTag.PACKAGE_REVISION}", type = "PLAINTEXT" },
+    { name = "PG_MAJOR",         value = "#{ParseTag.PG_MAJOR}",         type = "PLAINTEXT" },
+    { name = "IS_RC",            value = "#{ParseTag.IS_RC}",            type = "PLAINTEXT" },
+  ])
 }
 
 # ── CodePipeline V2 ───────────────────────────────────────────────────────────
@@ -99,6 +110,9 @@ resource "aws_codepipeline" "this" {
   }
 
   # ── Stage 3: Build (4 parallel jobs) ─────────────────────────────────────────
+  # Dynamic vars (PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION, PG_MAJOR, IS_RC)
+  # are injected via #{ParseTag.*} pipeline variables — NOT read from SSM.
+  # This makes concurrent pg14/pg16 pipelines safe: each execution has its own vars.
   stage {
     name = "Build"
 
@@ -114,6 +128,7 @@ resource "aws_codepipeline" "this" {
       configuration = {
         ProjectName   = var.codebuild_ubuntu_amd64_project
         PrimarySource = "platform_source"
+        EnvironmentVariables = local.build_env_vars
       }
     }
 
@@ -129,6 +144,7 @@ resource "aws_codepipeline" "this" {
       configuration = {
         ProjectName   = var.codebuild_ubuntu_arm64_project
         PrimarySource = "platform_source"
+        EnvironmentVariables = local.build_env_vars
       }
     }
 
@@ -144,6 +160,7 @@ resource "aws_codepipeline" "this" {
       configuration = {
         ProjectName   = var.codebuild_rpm_amd64_project
         PrimarySource = "platform_source"
+        EnvironmentVariables = local.build_env_vars
       }
     }
 
@@ -159,6 +176,7 @@ resource "aws_codepipeline" "this" {
       configuration = {
         ProjectName   = var.codebuild_rpm_arm64_project
         PrimarySource = "platform_source"
+        EnvironmentVariables = local.build_env_vars
       }
     }
   }
@@ -176,8 +194,9 @@ resource "aws_codepipeline" "this" {
       input_artifacts = ["packages_source", "platform_source"]
 
       configuration = {
-        ProjectName   = var.codebuild_test_project
-        PrimarySource = "platform_source"
+        ProjectName          = var.codebuild_test_project
+        PrimarySource        = "platform_source"
+        EnvironmentVariables = local.build_env_vars
       }
     }
   }
@@ -195,8 +214,9 @@ resource "aws_codepipeline" "this" {
       input_artifacts = ["packages_source", "platform_source"]
 
       configuration = {
-        ProjectName   = var.codebuild_repo_updater_project
-        PrimarySource = "platform_source"
+        ProjectName          = var.codebuild_repo_updater_project
+        PrimarySource        = "platform_source"
+        EnvironmentVariables = local.build_env_vars
       }
     }
   }
@@ -233,12 +253,14 @@ resource "aws_codepipeline" "this" {
       configuration = {
         ProjectName   = var.codebuild_repo_updater_project
         PrimarySource = "platform_source"
+        # Merge build vars with BUILD_ENV=production override
         EnvironmentVariables = jsonencode([
-          {
-            name  = "BUILD_ENV"
-            value = "production"
-            type  = "PLAINTEXT"
-          }
+          { name = "PACKAGE_NAME",     value = "#{ParseTag.PACKAGE_NAME}",     type = "PLAINTEXT" },
+          { name = "PACKAGE_VERSION",  value = "#{ParseTag.PACKAGE_VERSION}",  type = "PLAINTEXT" },
+          { name = "PACKAGE_REVISION", value = "#{ParseTag.PACKAGE_REVISION}", type = "PLAINTEXT" },
+          { name = "PG_MAJOR",         value = "#{ParseTag.PG_MAJOR}",         type = "PLAINTEXT" },
+          { name = "IS_RC",            value = "#{ParseTag.IS_RC}",            type = "PLAINTEXT" },
+          { name = "BUILD_ENV",        value = "production",                    type = "PLAINTEXT" },
         ])
       }
     }

@@ -4,13 +4,12 @@ version: 0.2
 #
 # Regenerates APT (reprepro) and YUM (createrepo_c) repo metadata and syncs
 # the updated indexes to S3. Called twice per pipeline run:
-#   Stage 5: BUILD_ENV=staging  (default from SSM)
-#   Stage 7: BUILD_ENV=production (overridden by pipeline EnvironmentVariables)
+#   Stage 5: BUILD_ENV=staging  (injected by pipeline from #{ParseTag.*})
+#   Stage 7: BUILD_ENV=production (injected by pipeline EnvironmentVariables override)
 #
-# Reads from SSM:
-#   PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION (written by ParseTag)
-#   BUILD_ENV_SSM = /mydbops/cicd/build/BUILD_ENV (static default: "staging")
-#   CLOUDFRONT_DIST = /mydbops/cicd/cloudfront/distribution_id
+# Dynamic vars (PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION, BUILD_ENV) are
+# injected by the pipeline as EnvironmentVariables — NOT read from SSM — so
+# concurrent pg14/pg16 pipelines do not interfere with each other.
 #
 # Env vars injected by CodeBuild project definition (set via Terraform):
 #   ARTIFACTS_BUCKET, APT_BUCKET, YUM_BUCKET
@@ -18,11 +17,7 @@ version: 0.2
 
 env:
   parameter-store:
-    PACKAGE_NAME:     /mydbops/cicd/build/PACKAGE_NAME
-    PACKAGE_VERSION:  /mydbops/cicd/build/PACKAGE_VERSION
-    PACKAGE_REVISION: /mydbops/cicd/build/PACKAGE_REVISION
-    BUILD_ENV_SSM:    /mydbops/cicd/build/BUILD_ENV
-    CLOUDFRONT_DIST:  /mydbops/cicd/cloudfront/distribution_id
+    CLOUDFRONT_DIST: /mydbops/cicd/cloudfront/distribution_id
 
 phases:
   install:
@@ -32,12 +27,9 @@ phases:
 
   build:
     commands:
-      # BUILD_ENV may be overridden by the Stage 7 pipeline config (production).
-      # Fall back to the SSM-sourced value for Stage 5 (staging).
+      # BUILD_ENV is injected by the pipeline: "staging" for Stage 5, "production" for Stage 7.
       - |
-        EFFECTIVE_ENV="${BUILD_ENV:-$BUILD_ENV_SSM}"
-        echo "Repo update: env=$EFFECTIVE_ENV package=$PACKAGE_NAME $PACKAGE_VERSION-$PACKAGE_REVISION"
-        export EFFECTIVE_ENV
+        echo "Repo update: env=$BUILD_ENV package=$PACKAGE_NAME $PACKAGE_VERSION-$PACKAGE_REVISION"
 
       # ── APT repo (reprepro) ─────────────────────────────────────────────────
       - mkdir -p /repo/apt/conf /repo/incoming
@@ -62,7 +54,7 @@ phases:
 
       - |
         aws s3 sync \
-          "s3://${ARTIFACTS_BUCKET}/${EFFECTIVE_ENV}/packages/${PACKAGE_NAME}/${PACKAGE_VERSION}-${PACKAGE_REVISION}/" \
+          "s3://${ARTIFACTS_BUCKET}/${BUILD_ENV}/packages/${PACKAGE_NAME}/${PACKAGE_VERSION}-${PACKAGE_REVISION}/" \
           /repo/incoming/ \
           --exclude "*.sha256"
 
@@ -80,14 +72,14 @@ phases:
           fi
         done
 
-      - aws s3 sync /repo/apt/ "s3://${APT_BUCKET}/${EFFECTIVE_ENV}/" --delete
+      - aws s3 sync /repo/apt/ "s3://${APT_BUCKET}/${BUILD_ENV}/" --delete
 
       # ── YUM repo (createrepo_c) ─────────────────────────────────────────────
       - mkdir -p /repo/yum
 
       - |
         for TARGET in epel-8-x86_64 epel-8-aarch64 epel-9-x86_64 epel-9-aarch64 epel-10-x86_64; do
-          SRC="s3://${ARTIFACTS_BUCKET}/${EFFECTIVE_ENV}/packages/${PACKAGE_NAME}/${PACKAGE_VERSION}-${PACKAGE_REVISION}/${TARGET}/"
+          SRC="s3://${ARTIFACTS_BUCKET}/${BUILD_ENV}/packages/${PACKAGE_NAME}/${PACKAGE_VERSION}-${PACKAGE_REVISION}/${TARGET}/"
           ARCH="${TARGET##*-}"
           VER="${TARGET#epel-}"
           VER="${VER%-*}"
@@ -97,17 +89,17 @@ phases:
           createrepo_c "$DEST" || true
         done
 
-      - aws s3 sync /repo/yum/ "s3://${YUM_BUCKET}/${EFFECTIVE_ENV}/" --delete
+      - aws s3 sync /repo/yum/ "s3://${YUM_BUCKET}/${BUILD_ENV}/" --delete
 
       # ── CloudFront invalidation ─────────────────────────────────────────────
       - |
         if [ -n "$CLOUDFRONT_DIST" ]; then
           aws cloudfront create-invalidation \
             --distribution-id "$CLOUDFRONT_DIST" \
-            --paths "/${EFFECTIVE_ENV}/*"
+            --paths "/${BUILD_ENV}/*"
           echo "CloudFront invalidation triggered: $CLOUDFRONT_DIST"
         else
           echo "No CloudFront distribution configured — skipping invalidation"
         fi
 
-      - echo "Repo update complete: ${EFFECTIVE_ENV} / ${PACKAGE_NAME} ${PACKAGE_VERSION}-${PACKAGE_REVISION}"
+      - echo "Repo update complete: ${BUILD_ENV} / ${PACKAGE_NAME} ${PACKAGE_VERSION}-${PACKAGE_REVISION}"
