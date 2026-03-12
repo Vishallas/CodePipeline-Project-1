@@ -14,7 +14,7 @@ env:
     ECR_ACCOUNT_ID:  /mydbops/cicd/ecr/account_id
     ECR_REGION:      /mydbops/cicd/ecr/region
   secrets-manager:
-    GPG_PRIVATE_KEY: mydbops/cicd/gpg-signing-key
+    GPG_PRIVATE_KEY: mydbops/cicd/gpg-signing-key-1
 
 phases:
   install:
