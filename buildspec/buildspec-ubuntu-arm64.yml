@@ -17,11 +17,14 @@ env:
 phases:
   install:
     commands:
-      - apt-get update -qq
-      - apt-get install -y -qq docker.io python3 python3-yaml jq curl awscli
+      # CodeBuild ARM_CONTAINER uses Amazon Linux (no Ubuntu ARM image exists).
+      # The actual DEB build runs inside the Ubuntu arm64 Docker image from ECR.
+      - yum install -y docker python3 python3-pyyaml jq curl
 
   pre_build:
     commands:
+      - nohup /usr/local/bin/dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=overlay2 &
+      - timeout 15 sh -c "until docker info; do echo Waiting for Docker...; sleep 1; done"
       - aws ecr get-login-password --region "$ECR_REGION" | docker login --username AWS --password-stdin "${ECR_ACCOUNT_ID}.dkr.ecr.${ECR_REGION}.amazonaws.com"
 
   build:

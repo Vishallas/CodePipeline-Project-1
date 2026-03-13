@@ -553,7 +553,10 @@ resource "aws_codebuild_project" "build_ubuntu_arm64" {
   environment {
     type            = "ARM_CONTAINER"
     compute_type    = "BUILD_GENERAL1_LARGE"
-    image           = "aws/codebuild/amazonlinux2-aarch64-standard:3.0"
+    # AWS publishes no Ubuntu image for ARM_CONTAINER — only Amazon Linux is available.
+    # The buildspec installs host tools via yum; the actual DEB build runs inside
+    # the Ubuntu arm64 Docker image pulled from ECR, so the host OS doesn't matter.
+    image           = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
     privileged_mode = true
   }
 
@@ -585,7 +588,10 @@ resource "aws_codebuild_project" "build_rpm_amd64" {
   environment {
     type            = "LINUX_CONTAINER"
     compute_type    = var.codebuild_compute_type
-    image           = var.codebuild_image
+    # Amazon Linux 2023 x86_64 — buildspec uses yum.
+    # standard:7.0 is Ubuntu (no yum) and would fail at INSTALL phase.
+    # Image name: "amazonlinux-x86_64" not "amazonlinux2023-x86_64" (AWS naming convention).
+    image           = "aws/codebuild/amazonlinux-x86_64-standard:5.0"
     privileged_mode = true
   }
 
@@ -617,7 +623,10 @@ resource "aws_codebuild_project" "build_rpm_arm64" {
   environment {
     type            = "ARM_CONTAINER"
     compute_type    = "BUILD_GENERAL1_LARGE"
-    image           = "aws/codebuild/amazonlinux2-aarch64-standard:3.0"
+    # Amazon Linux 2023 aarch64 — matches the yum-based buildspec.
+    # amazonlinux2-aarch64-standard:3.0 (AL2) was EOL as of June 2025.
+    # Image name: "amazonlinux-aarch64" not "amazonlinux2023-aarch64" (AWS naming convention).
+    image           = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
     privileged_mode = true
   }
 
