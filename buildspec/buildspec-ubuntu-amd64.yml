@@ -38,4 +38,5 @@ phases:
           --packages-dir "$PACKAGES_DIR" \
           --s3-bucket    "$S3_BUCKET" \
           --env          "$BUILD_ENV" \
-          --os           ubuntu
+          --os           ubuntu \
+          --arch         amd64

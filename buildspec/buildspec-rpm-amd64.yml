@@ -36,7 +36,8 @@ phases:
           --packages-dir "$PACKAGES_DIR" \
           --s3-bucket    "$S3_BUCKET" \
           --env          "$BUILD_ENV" \
-          --os           epel
+          --os           epel \
+          --arch         x86_64
       - |
         PLATFORM_DIR="$CODEBUILD_SRC_DIR"
         PACKAGES_DIR="$CODEBUILD_SRC_DIR_packages_source"
@@ -45,4 +46,5 @@ phases:
           --packages-dir "$PACKAGES_DIR" \
           --s3-bucket    "$S3_BUCKET" \
           --env          "$BUILD_ENV" \
-          --os           fedora
+          --os           fedora \
+          --arch         x86_64
