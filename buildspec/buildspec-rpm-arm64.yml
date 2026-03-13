@@ -16,7 +16,7 @@ env:
 phases:
   install:
     commands:
-      - yum install -y docker python3 python3-pyyaml jq curl
+      - yum install -y docker python3 python3-pyyaml jq
 
   pre_build:
     commands:
