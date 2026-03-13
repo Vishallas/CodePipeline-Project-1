@@ -48,6 +48,12 @@ assemble_deb_structure() {
         cp -a "${overlay_dir}/." "${src_dir}/debian/"
     fi
 
+    # Strip executable bit from lintian-overrides files.
+    # Ubuntu 24.04's debhelper treats executable *.lintian-overrides as scripts
+    # and tries to run them (exit 127 = not a real executable). Older debhelper
+    # silently ignored this. The files are plain text — always remove +x.
+    find "${src_dir}/debian" -name '*.lintian-overrides' -exec chmod -x {} \;
+
     log_success "Deb source tree assembled in: $src_dir"
 }
 
