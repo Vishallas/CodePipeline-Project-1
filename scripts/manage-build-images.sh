@@ -2,11 +2,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # scripts/manage-build-images.sh — Build, push, pull, and inspect ECR images
 #
+# Supports building both amd64 and arm64 images on a single host machine using
+# Docker buildx with QEMU cross-architecture emulation. Run 'setup-builder'
+# once before the first build, then 'build' builds all arch variants locally.
+#
 # Usage:
 #   manage-build-images.sh <command> [--target TAG] [--pg-versions "14 15 16 17"]
 #
 # Commands:
-#   build   [--target TAG]  Build one or all images locally
+#   setup-builder       Install QEMU emulators + create persistent buildx builder.
+#                       Run this once on a new machine before the first build.
+#   build   [--target TAG]  Build one or all images locally (both arches on one host)
 #   push    [--target TAG]  Push one or all images to ECR
 #   pull    [--target TAG]  Pull one or all images from ECR
 #   list                    List all images + ECR existence status
@@ -21,6 +27,24 @@
 #   --region  REGION    AWS region    (or set ECR_REGION env)
 #   --repo    REPO      ECR repo name (default: mydbops/pg-build)
 #   --dry-run           Print commands without executing
+#
+# How cross-arch builds work on one host:
+#   Docker buildx + QEMU allows building arm64 images on an amd64 host (and
+#   vice versa) via CPU instruction emulation. The first build of a cross-arch
+#   image is slower (QEMU overhead) but the result is a fully functional image
+#   that the target architecture can run natively after pulling from ECR.
+#
+#   The 'setup-builder' command:
+#     1. Installs QEMU binfmt_misc handlers for all architectures
+#        (uses tonistiigi/binfmt — the standard Docker multi-arch tool)
+#     2. Creates a named buildx builder 'mydbops-builder' using the
+#        docker-container driver, which unlike the default 'docker' driver
+#        supports --load for cross-arch single-platform images
+#
+#   After setup, 'build' runs each image in the manifest against its declared
+#   platform (linux/amd64 or linux/arm64). Cross-arch targets are built via
+#   QEMU and loaded into the local Docker daemon with --load, ready for
+#   inspection and pushing.
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -42,6 +66,7 @@ PG_VERSIONS="${PG_VERSIONS:-14 15 16 17}"
 CMD=""
 TARGET=""
 DRY_RUN=0
+BUILDX_BUILDER="mydbops-builder"
 
 # ─── Image manifest ───────────────────────────────────────────────────────────
 #
@@ -84,7 +109,7 @@ ALL_TAGS=(
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        build|push|pull|list|scan|login) CMD="$1"; shift ;;
+        setup-builder|build|push|pull|list|scan|login) CMD="$1"; shift ;;
         --target)      TARGET="$2";      shift 2 ;;
         --pg-versions) PG_VERSIONS="$2"; shift 2 ;;
         --account)     ECR_ACCOUNT_ID="$2"; shift 2 ;;
@@ -96,7 +121,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$CMD" ]]; then
-    echo "Usage: manage-build-images.sh <build|push|pull|list|scan|login> [options]"
+    echo "Usage: manage-build-images.sh <setup-builder|build|push|pull|list|scan|login> [options]"
     exit 1
 fi
 
@@ -127,6 +152,38 @@ require_ecr_account() {
 
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
+cmd_setup_builder() {
+    log_step "Installing QEMU binfmt_misc handlers"
+    run_cmd docker run --privileged --rm tonistiigi/binfmt --install all
+
+    log_step "Creating buildx builder '${BUILDX_BUILDER}' (docker-container driver)"
+    if docker buildx inspect "$BUILDX_BUILDER" &>/dev/null; then
+        log_info "Builder '${BUILDX_BUILDER}' already exists — skipping create"
+    else
+        run_cmd docker buildx create \
+            --name "$BUILDX_BUILDER" \
+            --driver docker-container \
+            --bootstrap \
+            --use
+    fi
+
+    log_success "Builder ready: ${BUILDX_BUILDER}"
+    log_info "Run 'build' to build images for all platforms"
+}
+
+# ensure_builder — called automatically by cmd_build; idempotent
+ensure_builder() {
+    if ! docker buildx inspect "$BUILDX_BUILDER" &>/dev/null; then
+        log_warn "Builder '${BUILDX_BUILDER}' not found — run 'setup-builder' first"
+        log_warn "Falling back to: docker buildx create --name ${BUILDX_BUILDER} --driver docker-container --bootstrap --use"
+        docker buildx create \
+            --name "$BUILDX_BUILDER" \
+            --driver docker-container \
+            --bootstrap \
+            --use
+    fi
+}
+
 cmd_login() {
     require_ecr_account
     log_step "ECR login: $(ecr_uri)"
@@ -136,6 +193,8 @@ cmd_login() {
 }
 
 cmd_build() {
+    ensure_builder
+
     local tags=("${ALL_TAGS[@]}")
     [[ -n "$TARGET" ]] && tags=("$TARGET")
 
@@ -160,6 +219,7 @@ cmd_build() {
 
         log_build "Building: ${tag}  [platform=${platform}]"
         run_cmd docker buildx build \
+            --builder "$BUILDX_BUILDER" \
             --platform "$platform" \
             "${build_arg_flags[@]}" \
             -f "$dockerfile" \
@@ -255,6 +315,7 @@ cmd_scan() {
 # ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 case "$CMD" in
+    setup-builder) cmd_setup_builder ;;
     build) cmd_build ;;
     push)  cmd_push  ;;
     pull)  cmd_pull  ;;

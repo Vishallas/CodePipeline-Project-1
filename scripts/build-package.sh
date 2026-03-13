@@ -111,18 +111,20 @@ build_package() {
     log_step "=== Building: ${pkg_name} ${PKG_VERSION}-${PKG_REVISION} ==="
 
     # Determine target list
-    # If CLI args given → single explicit target (build.yml ignored)
-    # Otherwise → read enabled targets from build.yml
+    # All three CLI args given → single explicit target, build.yml ignored.
+    # Only --os (optionally --release/--arch) given → read build.yml then filter.
+    # No CLI args → all enabled targets from build.yml.
     local targets=()
-    if [[ -n "$CLI_OS" ]]; then
-        targets=("${CLI_OS}:${CLI_RELEASE:-*}:${CLI_ARCH:-*}")
+    if [[ -n "$CLI_OS" && -n "$CLI_RELEASE" && -n "$CLI_ARCH" ]]; then
+        targets=("${CLI_OS}:${CLI_RELEASE}:${CLI_ARCH}")
     else
         if [[ ! -f "$build_yml" ]]; then
             log_error "build.yml not found: $build_yml"
             return 1
         fi
         # Parse enabled targets from build.yml via Python
-        mapfile -t targets < <(python3 - "$build_yml" <<'PYEOF'
+        local all_targets=()
+        mapfile -t all_targets < <(python3 - "$build_yml" <<'PYEOF'
 import sys
 import yaml
 
@@ -138,6 +140,14 @@ for t in data.get('targets', []):
         print(f"{os_name}:{release}:{arch}")
 PYEOF
         )
+        # Apply CLI filters (--os / --release / --arch act as optional filters)
+        for t in "${all_targets[@]}"; do
+            IFS=':' read -r t_os t_release t_arch <<< "$t"
+            [[ -n "$CLI_OS"      && "$t_os"      != "$CLI_OS"      ]] && continue
+            [[ -n "$CLI_RELEASE" && "$t_release" != "$CLI_RELEASE" ]] && continue
+            [[ -n "$CLI_ARCH"    && "$t_arch"    != "$CLI_ARCH"    ]] && continue
+            targets+=("$t")
+        done
     fi
 
     if [[ ${#targets[@]} -eq 0 ]]; then
