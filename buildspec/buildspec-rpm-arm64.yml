@@ -16,6 +16,7 @@ env:
 phases:
   install:
     commands:
+      # Curl is already bundled in amazon linux
       - yum install -y docker python3 python3-pyyaml jq
 
   pre_build:

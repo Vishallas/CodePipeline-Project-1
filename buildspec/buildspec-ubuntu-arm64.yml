@@ -19,6 +19,7 @@ phases:
     commands:
       # CodeBuild ARM_CONTAINER uses Amazon Linux (no Ubuntu ARM image exists).
       # The actual DEB build runs inside the Ubuntu arm64 Docker image from ECR.
+      # Curl is already bundled in amazon linux
       - yum install -y docker python3 python3-pyyaml jq
 
   pre_build:
