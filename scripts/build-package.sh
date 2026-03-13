@@ -204,17 +204,24 @@ PYEOF
 
         log_step "--- Target: ${s3_label} ---"
 
-        # Assemble and build (errors captured, loop continues)
-        if ! (
-            set -e
-            if [[ "$pkg_type" == "deb" ]]; then
-                assemble_deb_structure "$tarball_path" "$pkg_dir" "$target_work" "$t_os" "$t_release"
-                build_deb "$pkg_name" "$PKG_VERSION" "$target_work" "$output_dir" "$docker_image"
-            else
-                assemble_rpm_structure "$tarball_path" "$pkg_dir" "$target_work"
-                build_rpm "$pkg_name" "$PKG_VERSION" "$target_work" "$output_dir" "$docker_image" "$PG_MAJOR"
+        # Assemble and build.
+        # IMPORTANT: do NOT wrap in a subshell ( ... ) — build_deb/build_rpm set
+        # BUILT_DEBS/BUILT_RPMS as global arrays that must be visible to the
+        # upload logic below. Subshell assignments never propagate to the parent.
+        local build_failed=0
+        if [[ "$pkg_type" == "deb" ]]; then
+            assemble_deb_structure "$tarball_path" "$pkg_dir" "$target_work" "$t_os" "$t_release" || build_failed=1
+            if [[ $build_failed -eq 0 ]]; then
+                build_deb "$pkg_name" "$PKG_VERSION" "$target_work" "$output_dir" "$docker_image" || build_failed=1
             fi
-        ); then
+        else
+            assemble_rpm_structure "$tarball_path" "$pkg_dir" "$target_work" || build_failed=1
+            if [[ $build_failed -eq 0 ]]; then
+                build_rpm "$pkg_name" "$PKG_VERSION" "$target_work" "$output_dir" "$docker_image" "$PG_MAJOR" || build_failed=1
+            fi
+        fi
+
+        if [[ $build_failed -eq 1 ]]; then
             log_error "Build failed for target: ${s3_label}"
             FAILED_TARGETS+=("$s3_label")
             continue
