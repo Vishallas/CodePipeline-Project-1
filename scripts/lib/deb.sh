@@ -83,7 +83,7 @@ build_deb() {
     docker run --rm \
         -v "${src_dir}:/build/src" \
         -v "${output_dir}:/build/output" \
-        -e "DEB_BUILD_OPTIONS=parallel=${make_jobs}" \
+        -e "DEB_BUILD_OPTIONS=parallel=${make_jobs} noautodbgsym nocheck" \
         -e "MAKEFLAGS=-j${make_jobs}" \
         -w /build/src \
         "$docker_image" \
