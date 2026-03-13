@@ -19,6 +19,9 @@ locals {
     { name = "PACKAGE_REVISION", value = "#{ParseTag.PACKAGE_REVISION}", type = "PLAINTEXT" },
     { name = "PG_MAJOR",         value = "#{ParseTag.PG_MAJOR}",         type = "PLAINTEXT" },
     { name = "IS_RC",            value = "#{ParseTag.IS_RC}",            type = "PLAINTEXT" },
+    # BUILD_ENV is static for build stages — always "staging".
+    # Stage 7 (promote) overrides this to "production" in its own EnvironmentVariables block.
+    { name = "BUILD_ENV",        value = "staging",                      type = "PLAINTEXT" },
   ])
 }
 

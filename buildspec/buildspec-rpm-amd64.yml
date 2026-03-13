@@ -21,23 +21,25 @@ phases:
 
   pre_build:
     commands:
-      - export PLATFORM_DIR="$CODEBUILD_SRC_DIR"
-      - export PACKAGES_DIR="$CODEBUILD_SRC_DIR_packages_source"
       - aws ecr get-login-password --region "$ECR_REGION" | docker login --username AWS --password-stdin "${ECR_ACCOUNT_ID}.dkr.ecr.${ECR_REGION}.amazonaws.com"
 
   build:
     commands:
       - |
+        PLATFORM_DIR="$CODEBUILD_SRC_DIR"
+        PACKAGES_DIR="$CODEBUILD_SRC_DIR_packages_source"
         "$PLATFORM_DIR/scripts/build-package.sh" \
-          --package    "$PACKAGE_NAME" \
+          --package      "$PACKAGE_NAME" \
           --packages-dir "$PACKAGES_DIR" \
-          --s3-bucket  "$S3_BUCKET" \
-          --env        "$BUILD_ENV" \
-          --os         epel
+          --s3-bucket    "$S3_BUCKET" \
+          --env          "$BUILD_ENV" \
+          --os           epel
       - |
+        PLATFORM_DIR="$CODEBUILD_SRC_DIR"
+        PACKAGES_DIR="$CODEBUILD_SRC_DIR_packages_source"
         "$PLATFORM_DIR/scripts/build-package.sh" \
-          --package    "$PACKAGE_NAME" \
+          --package      "$PACKAGE_NAME" \
           --packages-dir "$PACKAGES_DIR" \
-          --s3-bucket  "$S3_BUCKET" \
-          --env        "$BUILD_ENV" \
-          --os         fedora
+          --s3-bucket    "$S3_BUCKET" \
+          --env          "$BUILD_ENV" \
+          --os           fedora
