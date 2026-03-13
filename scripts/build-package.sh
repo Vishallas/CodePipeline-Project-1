@@ -202,7 +202,7 @@ PYEOF
                 build_deb "$pkg_name" "$PKG_VERSION" "$target_work" "$output_dir" "$docker_image"
             else
                 assemble_rpm_structure "$tarball_path" "$pkg_dir" "$target_work"
-                build_rpm "$pkg_name" "$PKG_VERSION" "$target_work" "$output_dir" "$docker_image"
+                build_rpm "$pkg_name" "$PKG_VERSION" "$target_work" "$output_dir" "$docker_image" "$PG_MAJOR"
             fi
         ); then
             log_error "Build failed for target: ${s3_label}"

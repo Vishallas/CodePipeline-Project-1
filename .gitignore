@@ -1,3 +1,4 @@
 .claude
 **/.terraform*
 terraform.tfstate*
+*.bz2

@@ -67,16 +67,29 @@ build_deb() {
 
     local src_dir="${work_dir}/src"
 
-    log_build "Building deb: ${pkg} ${version} in ${docker_image}"
+    local make_jobs
+    make_jobs=$(nproc 2>/dev/null || echo 4)
 
+    log_build "Building deb: ${pkg} ${version} in ${docker_image} (${make_jobs} jobs)"
+
+    # Notes on flags:
+    # -b              binary-only build (no source package)
+    # -us -uc         skip signing (handled separately via gpg_sign_deb)
+    # -Pnocheck       disable PostgreSQL regression test suite (DEB_BUILD_PROFILES=nocheck).
+    #                 Without this, debian/rules runs 'make check' which takes 30+ min
+    #                 and fails in CI containers (hard exit 1 on test failure per rules).
+    # src_dir is NOT mounted :ro — dpkg-buildpackage must write debian/files,
+    # debian/*.debhelper.log, and build artifacts back into the source tree.
     docker run --rm \
-        -v "${src_dir}:/build/src:ro" \
+        -v "${src_dir}:/build/src" \
         -v "${output_dir}:/build/output" \
+        -e "DEB_BUILD_OPTIONS=parallel=${make_jobs}" \
+        -e "MAKEFLAGS=-j${make_jobs}" \
         -w /build/src \
         "$docker_image" \
         bash -c "
             set -euo pipefail
-            dpkg-buildpackage -us -uc -b 2>&1
+            dpkg-buildpackage -us -uc -b -Pnocheck 2>&1
             mv ../*.deb /build/output/ 2>/dev/null || true
         "
 
