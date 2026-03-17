@@ -7,57 +7,42 @@ ARG PG_VERSIONS="14 15 16 17"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
-
+ARG UBUNTU_VERSION
 
 # ------------------------------------------------------------
 # Base toolchain
 # ------------------------------------------------------------
-# RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-#     build-essential \
-#     devscripts \
-#     debhelper \
-#     fakeroot \
-#     dpkg-dev \
-#     dpkg-sig \
-#     lintian \
-#     quilt \
-#     curl \
-#     ca-certificates \
-#     gnupg \
-#     lsb-release \
-#     python3 \
-#     python3-yaml \
-#     jq \
-#     git \
-#     wget \
-#     unzip \
-#  && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update -qq \
- && apt-get install -y -qq software-properties-common \
- && add-apt-repository universe \
- && apt-get update -qq \
- && apt-get install -y -qq --no-install-recommends \
-    build-essential \
-    devscripts \
-    debhelper \
-    fakeroot \
-    dpkg-dev \
-    dpkg-sig \
-    lintian \
-    quilt \
-    curl \
-    ca-certificates \
-    gnupg \
-    lsb-release \
-    python3 \
-    python3-yaml \
-    jq \
-    git \
-    wget \
-    unzip \
- && rm -rf /var/lib/apt/lists/*
-
+RUN set -eux; apt-get update -qq; \
+    apt-get install -y -qq --no-install-recommends software-properties-common; \
+    add-apt-repository universe; \
+    apt-get update -qq; \
+    PKGS="\
+      build-essential \
+      devscripts \
+      curl \
+      debhelper \
+      fakeroot \
+      dpkg-dev \
+      lintian \
+      quilt \
+      ca-certificates \
+      gnupg \
+      lsb-release \
+      python3 \
+      python3-yaml \
+      jq \
+      git \
+      wget \
+      unzip \
+    "; \
+    \
+    if [ "$UBUNTU_VERSION" != "24.04" ]; then \
+        PKGS="$PKGS dpkg-sig"; \
+    fi; \
+    echo "Installing packages: $PKGS"; \
+    apt-get install -y -qq --no-install-recommends $PKGS; \
+    rm -rf /var/lib/apt/lists/*
  
 # ------------------------------------------------------------
 # AWS CLI
