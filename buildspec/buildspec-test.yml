@@ -1,0 +1,37 @@
+version: 0.2
+# ─────────────────────────────────────────────────────────────────────────────
+# Mydbops CodeBuild Buildspec — Stage 4: Install Tests
+#
+# Downloads built packages from S3 staging, installs each in a clean distro
+# container, verifies the postgres binary version.
+#
+# Cross-arch targets are skipped automatically (arm64 packages on x86_64 host
+# and vice versa). All native targets are tested before the stage fails — never
+# fail-fast — so a single run gives the full pass/fail picture for the approval.
+# ─────────────────────────────────────────────────────────────────────────────
+
+env:
+  # PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION, PG_MAJOR, BUILD_ENV
+  # injected by the pipeline via #{ParseTag.*} EnvironmentVariables.
+  parameter-store:
+    S3_BUCKET:      /mydbops/cicd/build/S3_BUCKET
+    ECR_ACCOUNT_ID: /mydbops/cicd/ecr/account_id
+    ECR_REGION:     /mydbops/cicd/ecr/region
+
+phases:
+  install:
+    commands:
+      - apt-get update -qq
+      - apt-get install -y -qq docker.io python3 python3-yaml jq curl
+
+  pre_build:
+    commands:
+      - aws ecr get-login-password --region "$ECR_REGION" | docker login --username AWS --password-stdin "${ECR_ACCOUNT_ID}.dkr.ecr.${ECR_REGION}.amazonaws.com"
+
+  build:
+    commands:
+      - |
+        PLATFORM_DIR="$CODEBUILD_SRC_DIR"
+        PACKAGES_DIR="$CODEBUILD_SRC_DIR_packages_source"
+        export PLATFORM_DIR PACKAGES_DIR
+        bash "$PACKAGES_DIR/tests/test_install.sh"
