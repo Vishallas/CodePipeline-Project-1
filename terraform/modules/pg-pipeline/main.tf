@@ -22,6 +22,8 @@ locals {
     # BUILD_ENV is static for build stages — always "staging".
     # Stage 7 (promote) overrides this to "production" in its own EnvironmentVariables block.
     { name = "BUILD_ENV",        value = "staging",                      type = "PLAINTEXT" },
+    # GIT_TAG is passed so buildspecs can pin packages_source to the exact tag commit.
+    { name = "GIT_TAG",          value = "#{variables.GIT_TAG}",         type = "PLAINTEXT" },
   ])
 }
 
@@ -61,7 +63,11 @@ resource "aws_codepipeline" "this" {
         ConnectionArn        = var.github_connection_arn
         FullRepositoryId     = var.packaging_repo
         BranchName           = local.branch_name
-        OutputArtifactFormat = "CODE_ZIP"
+        # FULL_CLONE preserves the .git directory so buildspecs can run
+        # `git checkout $GIT_TAG` and pin to the exact tagged commit.
+        # CODE_ZIP snapshots the branch HEAD which can drift if the branch
+        # advances between the tag push and when the pipeline stage runs.
+        OutputArtifactFormat = "FULL_CLONE"
         DetectChanges        = "false"
       }
     }
@@ -287,7 +293,16 @@ resource "aws_cloudwatch_event_rule" "tag_trigger" {
   event_pattern = jsonencode({
     # Include both source names: old (codestar-connections) and new (codeconnections)
     source = ["aws.codeconnections", "aws.codestar-connections"]
-    "detail-type" = ["Connection Webhook Event"]
+    # AWS uses different detail-type strings depending on connection age and region.
+    # Include all known variants so the rule matches regardless of which is sent:
+    #   "CodeConnections Source Webhook Event"       — new CodeConnections API
+    #   "CodeStar Connections Source Webhook Event"  — old CodeStar Connections API
+    #   "Connection Webhook Event"                   — seen in some legacy connections
+    "detail-type" = [
+      "CodeConnections Source Webhook Event",
+      "CodeStar Connections Source Webhook Event",
+      "Connection Webhook Event"
+    ]
     detail = {
       event          = ["referenceCreated"]
       referenceType  = ["tag"]

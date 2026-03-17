@@ -24,6 +24,9 @@ phases:
     commands:
       - nohup /usr/local/bin/dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=overlay2 &
       - timeout 15 sh -c "until docker info; do echo Waiting for Docker...; sleep 1; done"
+      # Pin packages_source to the exact tagged commit (FULL_CLONE required).
+      - git -C "$CODEBUILD_SRC_DIR_packages_source" fetch --tags origin
+      - git -C "$CODEBUILD_SRC_DIR_packages_source" checkout "$GIT_TAG"
       - aws ecr get-login-password --region "$ECR_REGION" | docker login --username AWS --password-stdin "${ECR_ACCOUNT_ID}.dkr.ecr.${ECR_REGION}.amazonaws.com"
 
   build:
