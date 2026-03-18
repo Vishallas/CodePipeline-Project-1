@@ -111,31 +111,38 @@ phases:
         fi
       - |
         python3 - "$CODEBUILD_SRC_DIR_packages_source/packages/${PACKAGE_NAME}/METADATA.yml" \
-                  "$PACKAGE_NAME" "$PACKAGE_VERSION" <<'PYEOF'
+                  "$PACKAGE_NAME" "$PACKAGE_VERSION" "$PACKAGE_REVISION" <<'PYEOF'
         import sys, yaml
 
-        metadata_file = sys.argv[1]
-        expected_name = sys.argv[2]
-        expected_ver  = sys.argv[3]
+        metadata_file    = sys.argv[1]
+        expected_name    = sys.argv[2]
+        expected_ver     = sys.argv[3]
+        expected_revision = sys.argv[4]
 
         with open(metadata_file) as f:
             data = yaml.safe_load(f)
 
-        actual_name = data['package']['name']
-        actual_ver  = str(data['package']['version'])
+        actual_name     = data['package']['name']
+        actual_ver      = str(data['package']['version'])
+        actual_revision = str(data['package']['revision'])
 
         errors = []
         if actual_name != expected_name:
             errors.append(f"Name mismatch: tag has '{expected_name}', METADATA.yml has '{actual_name}'")
         if actual_ver != expected_ver:
             errors.append(f"Version mismatch: tag has '{expected_ver}', METADATA.yml has '{actual_ver}'")
+        if actual_revision != expected_revision:
+            errors.append(
+                f"Revision mismatch: tag has '{expected_revision}', METADATA.yml has '{actual_revision}' "
+                f"— update METADATA.yml revision before tagging"
+            )
 
         if errors:
             for e in errors:
                 print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(1)
 
-        print(f"Validation passed: {actual_name} {actual_ver}")
+        print(f"Validation passed: {actual_name} {actual_ver}-{actual_revision}")
         PYEOF
 
       # ── Step 3: Write dynamic build vars to SSM ───────────────────────────

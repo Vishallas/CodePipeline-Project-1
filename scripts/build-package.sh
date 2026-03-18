@@ -100,13 +100,17 @@ build_package() {
         return 1
     fi
 
-    # Load package metadata
+    # Load package metadata.
+    # Pipeline env vars (PACKAGE_VERSION, PACKAGE_REVISION, PG_MAJOR) take
+    # precedence over METADATA.yml when set — they come from the git tag parsed
+    # by ParseTag and are the authoritative source for what was tagged.
+    # Fall back to METADATA.yml for local runs where no pipeline context exists.
     local PKG_VERSION PKG_REVISION SOURCE_URL SOURCE_SHA256 PG_MAJOR
-    PKG_VERSION=$(yaml_get "$metadata" 'package.version')
-    PKG_REVISION=$(yaml_get "$metadata" 'package.revision')
+    PKG_VERSION="${PACKAGE_VERSION:-$(yaml_get "$metadata" 'package.version')}"
+    PKG_REVISION="${PACKAGE_REVISION:-$(yaml_get "$metadata" 'package.revision')}"
     SOURCE_URL=$(yaml_get "$metadata" 'package.source_url')
     SOURCE_SHA256=$(yaml_get "$metadata" 'package.source_sha256')
-    PG_MAJOR=$(yaml_get "$metadata" 'package.pg_major')
+    PG_MAJOR="${PG_MAJOR:-$(yaml_get "$metadata" 'package.pg_major')}"
 
     log_step "=== Building: ${pkg_name} ${PKG_VERSION}-${PKG_REVISION} ==="
 
