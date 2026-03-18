@@ -238,9 +238,9 @@ resource "aws_iam_role_policy" "codebuild" {
         Resource = "*"
       },
       {
-        # Required for FULL_CLONE: CodeBuild authenticates with GitHub via the
-        # connection when running `git fetch --tags` inside the build environment.
-        Sid    = "GitHubFullClone"
+        # Required for CODEBUILD_CLONE_REF: CodeBuild authenticates with GitHub
+        # via the connection when running `git fetch --tags` inside the build.
+        Sid    = "GitHubCloneRef"
         Effect = "Allow"
         Action = [
           "codeconnections:UseConnection",

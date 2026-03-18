@@ -13,6 +13,10 @@ locals {
   # Dynamic build vars injected from ParseTag pipeline variables.
   # Using #{ParseTag.*} keeps each pipeline execution isolated — no SSM race
   # condition when pg14 and pg16 pipelines run simultaneously.
+  #
+  # GIT_TAG comes from #{ParseTag.GIT_TAG} — ParseTag resolves it from either:
+  #   - BRANCH_REF (#{packages_source.BranchName}) for V2 tag-triggered runs
+  #   - GIT_TAG pipeline variable for manual runs
   build_env_vars = jsonencode([
     { name = "PACKAGE_NAME",     value = "#{ParseTag.PACKAGE_NAME}",     type = "PLAINTEXT" },
     { name = "PACKAGE_VERSION",  value = "#{ParseTag.PACKAGE_VERSION}",  type = "PLAINTEXT" },
@@ -22,8 +26,8 @@ locals {
     # BUILD_ENV is static for build stages — always "staging".
     # Stage 7 (promote) overrides this to "production" in its own EnvironmentVariables block.
     { name = "BUILD_ENV",        value = "staging",                      type = "PLAINTEXT" },
-    # GIT_TAG is passed so buildspecs can pin packages_source to the exact tag commit.
-    { name = "GIT_TAG",          value = "#{variables.GIT_TAG}",         type = "PLAINTEXT" },
+    # GIT_TAG resolved by ParseTag — safe for both auto-triggered and manual runs.
+    { name = "GIT_TAG",          value = "#{ParseTag.GIT_TAG}",          type = "PLAINTEXT" },
   ])
 }
 
@@ -35,16 +39,35 @@ resource "aws_codepipeline" "this" {
   pipeline_type = "V2"
   tags          = var.tags
 
-  # Pipeline-level variable — injected by EventBridge at start
+  # Pipeline-level variable — used for manual pipeline runs.
+  # For tag-triggered runs, ParseTag reads the tag from #{packages_source.BranchName}
+  # (set by the V2 trigger) instead. Leave empty for auto-triggered runs.
   variable {
     name          = "GIT_TAG"
     default_value = ""
-    description   = "Git tag that triggered this run (e.g. pg${var.pg_major}/postgresql-${var.pg_major}-14.21-1)"
+    description   = "Override for manual runs only (e.g. pg${var.pg_major}/postgresql-${var.pg_major}-14.21-1). Leave empty for tag-triggered runs."
   }
 
   artifact_store {
     type     = "S3"
     location = var.artifacts_bucket
+  }
+
+  # ── V2 trigger — fire on git tag push, pg{N}/* pattern ───────────────────────
+  # Replaces EventBridge rule. AWS handles the CodeConnections webhook → pipeline
+  # start internally; no separate EventBridge rule or IAM role needed.
+  # When fired, #{SourceVars.BranchName} is set to the pushed tag name.
+  # NOTE: the EventBridge rule below is kept but DISABLED to prevent double-firing.
+  trigger {
+    provider_type = "CodeStarSourceConnection"
+    git_configuration {
+      source_action_name = "packages_source"
+      push {
+        tags {
+          includes = ["pg${var.pg_major}/*"]
+        }
+      }
+    }
   }
 
   # ── Stage 1: Source ─────────────────────────────────────────────────────────
@@ -58,16 +81,22 @@ resource "aws_codepipeline" "this" {
       provider         = "CodeStarSourceConnection"
       version          = "1"
       output_artifacts = ["packages_source"]
+      # namespace exposes source action output variables as #{SourceVars.*}
+      # BranchName is set to the pushed tag name when triggered by a V2 tag trigger.
+      namespace        = "SourceVars"
 
       configuration = {
         ConnectionArn        = var.github_connection_arn
         FullRepositoryId     = var.packaging_repo
         BranchName           = local.branch_name
-        # FULL_CLONE preserves the .git directory so buildspecs can run
-        # `git checkout $GIT_TAG` and pin to the exact tagged commit.
-        # CODE_ZIP snapshots the branch HEAD which can drift if the branch
-        # advances between the tag push and when the pipeline stage runs.
-        OutputArtifactFormat = "FULL_CLONE"
+        # CODEBUILD_CLONE_REF passes a credential-backed clone reference to
+        # CodeBuild so buildspecs can run `git fetch --tags && git checkout
+        # $GIT_TAG` to pin to the exact tagged commit.
+        # CODE_ZIP snapshots branch HEAD which can drift if the branch advances
+        # between the tag push and when the pipeline stage runs.
+        # NOTE: FULL_CLONE is CodeCommit-only and is INVALID for CodeStar
+        # Connections / CodeConnections (GitHub) — use CODEBUILD_CLONE_REF.
+        OutputArtifactFormat = "CODEBUILD_CLONE_REF"
         DetectChanges        = "false"
       }
     }
@@ -106,11 +135,18 @@ resource "aws_codepipeline" "this" {
       configuration = {
         ProjectName   = var.codebuild_parse_tag_project
         PrimarySource = "platform_source"
-        # Pass the pipeline variable GIT_TAG into the CodeBuild environment
         EnvironmentVariables = jsonencode([
+          # For manual runs: GIT_TAG pipeline variable is set by the operator.
+          # For tag-triggered runs: GIT_TAG is "" (default); ParseTag falls back
+          # to BRANCH_REF which CodePipeline sets to the pushed tag name.
           {
             name  = "GIT_TAG"
             value = "#{variables.GIT_TAG}"
+            type  = "PLAINTEXT"
+          },
+          {
+            name  = "BRANCH_REF"
+            value = "#{SourceVars.BranchName}"
             type  = "PLAINTEXT"
           }
         ])
@@ -287,7 +323,9 @@ resource "aws_codepipeline" "this" {
 resource "aws_cloudwatch_event_rule" "tag_trigger" {
   name        = local.eb_rule_name
   description = "Start ${local.pipeline_name} when a pg${var.pg_major}/* git tag is pushed"
-  state       = "ENABLED"
+  # DISABLED — pipeline now uses V2 native trigger (trigger block above).
+  # Kept here to avoid destroying the resource; delete after V2 trigger is confirmed working.
+  state       = "DISABLED"
   tags        = var.tags
 
   event_pattern = jsonencode({
