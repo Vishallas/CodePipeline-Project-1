@@ -42,7 +42,6 @@ RUN set -eux; \
         rpmlint \
         rpmdevtools \
         redhat-rpm-config \
-        spectool \
         autoconf \
         automake \
         libtool \
