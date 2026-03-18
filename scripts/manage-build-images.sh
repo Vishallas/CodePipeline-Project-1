@@ -12,12 +12,13 @@
 # Commands:
 #   setup-builder       Install QEMU emulators + create persistent buildx builder.
 #                       Run this once on a new machine before the first build.
-#   build   [--target TAG]  Build one or all images locally (both arches on one host)
-#   push    [--target TAG]  Push one or all images to ECR
-#   pull    [--target TAG]  Pull one or all images from ECR
-#   list                    List all images + ECR existence status
-#   scan    [--target TAG]  Trigger ECR vulnerability scan
-#   login                   ECR docker login only
+#   build      [--target TAG]  Build one or all images locally (both arches on one host)
+#   push       [--target TAG]  Push one or all images to ECR
+#   build-push [--target TAG]  Build then immediately push (atomic for CI use)
+#   pull       [--target TAG]  Pull one or all images from ECR
+#   list                       List all images + ECR existence status
+#   scan       [--target TAG]  Trigger ECR vulnerability scan
+#   login                      ECR docker login only
 #
 # Options:
 #   --target TAG        One image tag, e.g. ubuntu-22.04-amd64
@@ -26,6 +27,7 @@
 #   --account ID        AWS account ID (or set ECR_ACCOUNT_ID env)
 #   --region  REGION    AWS region    (or set ECR_REGION env)
 #   --repo    REPO      ECR repo name (default: mydbops/pg-build)
+#   --no-cache          Pass --no-cache to docker buildx build (force full rebuild)
 #   --dry-run           Print commands without executing
 #
 # How cross-arch builds work on one host:
@@ -66,6 +68,7 @@ PG_VERSIONS="${PG_VERSIONS:-14 15 16 17}"
 CMD=""
 TARGET=""
 DRY_RUN=0
+NO_CACHE=0
 BUILDX_BUILDER="mydbops-builder"
 
 # ─── Image manifest ───────────────────────────────────────────────────────────
@@ -109,19 +112,20 @@ ALL_TAGS=(
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        setup-builder|build|push|pull|list|scan|login) CMD="$1"; shift ;;
+        setup-builder|build|build-push|push|pull|list|scan|login) CMD="$1"; shift ;;
         --target)      TARGET="$2";      shift 2 ;;
         --pg-versions) PG_VERSIONS="$2"; shift 2 ;;
         --account)     ECR_ACCOUNT_ID="$2"; shift 2 ;;
         --region)      ECR_REGION="$2";  shift 2 ;;
         --repo)        ECR_REPO="$2";    shift 2 ;;
+        --no-cache)    NO_CACHE=1;       shift ;;
         --dry-run)     DRY_RUN=1;        shift ;;
         *) log_error "Unknown argument: $1"; exit 1 ;;
     esac
 done
 
 if [[ -z "$CMD" ]]; then
-    echo "Usage: manage-build-images.sh <setup-builder|build|push|pull|list|scan|login> [options]"
+    echo "Usage: manage-build-images.sh <setup-builder|build|build-push|push|pull|list|scan|login> [options]"
     exit 1
 fi
 
@@ -217,11 +221,15 @@ cmd_build() {
             [[ -n "$arg" ]] && build_arg_flags+=(--build-arg "$arg")
         done
 
-        log_build "Building: ${tag}  [platform=${platform}]"
+        local no_cache_flag=()
+        [[ $NO_CACHE -eq 1 ]] && no_cache_flag=(--no-cache)
+
+        log_build "Building: ${tag}  [platform=${platform}]${NO_CACHE:+ (--no-cache)}"
         run_cmd docker buildx build \
             --builder "$BUILDX_BUILDER" \
             --platform "$platform" \
             "${build_arg_flags[@]}" \
+            "${no_cache_flag[@]}" \
             -f "$dockerfile" \
             -t "$local_tag" \
             -t "$ecr_tag" \
@@ -236,6 +244,21 @@ cmd_push() {
     require_ecr_account
     cmd_login
 
+    # Ensure ECR repository exists before the first push
+    if [[ $DRY_RUN -eq 0 ]]; then
+        if ! aws ecr describe-repositories \
+                --repository-names "$ECR_REPO" \
+                --region "$ECR_REGION" &>/dev/null; then
+            log_step "ECR repository '${ECR_REPO}' not found — creating"
+            aws ecr create-repository \
+                --repository-name "$ECR_REPO" \
+                --region "$ECR_REGION" \
+                --image-scanning-configuration scanOnPush=true \
+                --image-tag-mutability MUTABLE
+            log_success "ECR repository created: ${ECR_REPO}"
+        fi
+    fi
+
     local tags=("${ALL_TAGS[@]}")
     [[ -n "$TARGET" ]] && tags=("$TARGET")
 
@@ -247,6 +270,11 @@ cmd_push() {
         run_cmd docker push "$ecr_tag"
         log_success "Pushed: ${tag}"
     done
+}
+
+cmd_build_push() {
+    cmd_build
+    cmd_push
 }
 
 cmd_pull() {
@@ -316,10 +344,11 @@ cmd_scan() {
 
 case "$CMD" in
     setup-builder) cmd_setup_builder ;;
-    build) cmd_build ;;
-    push)  cmd_push  ;;
-    pull)  cmd_pull  ;;
-    list)  cmd_list  ;;
-    scan)  cmd_scan  ;;
-    login) cmd_login ;;
+    build)         cmd_build         ;;
+    build-push)    cmd_build_push    ;;
+    push)          cmd_push          ;;
+    pull)          cmd_pull          ;;
+    list)          cmd_list          ;;
+    scan)          cmd_scan          ;;
+    login)         cmd_login         ;;
 esac
