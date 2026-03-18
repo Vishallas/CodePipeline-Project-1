@@ -26,8 +26,8 @@ phases:
 
   pre_build:
     commands:
-      # Pin packages_source to the exact tagged commit (FULL_CLONE required).
-      - git -C "$CODEBUILD_SRC_DIR_packages_source" fetch --tags origin
+      # Pin packages_source to the exact tagged commit.
+      # The tag is already present in the CODEBUILD_CLONE_REF clone — no fetch needed.
       - git -C "$CODEBUILD_SRC_DIR_packages_source" checkout "$GIT_TAG"
       - aws ecr get-login-password --region "$ECR_REGION" | docker login --username AWS --password-stdin "${ECR_ACCOUNT_ID}.dkr.ecr.${ECR_REGION}.amazonaws.com"
 
