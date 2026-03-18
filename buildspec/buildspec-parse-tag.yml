@@ -112,7 +112,6 @@ phases:
       # CodePipeline does not update the branch for you. Pin to the exact
       # tagged commit so METADATA.yml reflects what was tagged, not the tip.
       - |
-        git -C "$CODEBUILD_SRC_DIR_packages_source" fetch --tags origin
         git -C "$CODEBUILD_SRC_DIR_packages_source" checkout "$GIT_TAG"
         SHORT=$(git -C "$CODEBUILD_SRC_DIR_packages_source" rev-parse --short HEAD)
         echo "packages_source pinned to $GIT_TAG ($SHORT)"
