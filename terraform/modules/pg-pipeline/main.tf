@@ -15,7 +15,7 @@ locals {
   # condition when pg14 and pg16 pipelines run simultaneously.
   #
   # GIT_TAG comes from #{ParseTag.GIT_TAG} — ParseTag resolves it from
-  # BRANCH_REF (#{SourceVars.BranchName}), which the V2 trigger sets to the
+  # BRANCH_REF (#{SourceVars.TagName}), which the V2 trigger sets to the
   # pushed tag name. ParseTag exports it so all downstream stages get it.
   build_env_vars = jsonencode([
     { name = "PACKAGE_NAME",     value = "#{ParseTag.PACKAGE_NAME}",     type = "PLAINTEXT" },
@@ -47,7 +47,7 @@ resource "aws_codepipeline" "this" {
   # ── V2 trigger — fire on git tag push, pg{N}/* pattern ───────────────────────
   # Replaces EventBridge rule. AWS handles the CodeConnections webhook → pipeline
   # start internally; no separate EventBridge rule or IAM role needed.
-  # When fired, #{SourceVars.BranchName} is set to the pushed tag name.
+  # When fired, #{SourceVars.TagName} carries the pushed tag name.
   # NOTE: the EventBridge rule below is kept but DISABLED to prevent double-firing.
   trigger {
     provider_type = "CodeStarSourceConnection"
@@ -73,7 +73,8 @@ resource "aws_codepipeline" "this" {
       version          = "1"
       output_artifacts = ["packages_source"]
       # namespace exposes source action output variables as #{SourceVars.*}
-      # BranchName is set to the pushed tag name when triggered by a V2 tag trigger.
+      # TagName carries the pushed tag name (e.g. pg14/postgresql-14-14.21-1).
+      # BranchName only reflects the configured branch (pg14), not the tag.
       namespace        = "SourceVars"
 
       configuration = {
@@ -128,12 +129,12 @@ resource "aws_codepipeline" "this" {
         PrimarySource = "platform_source"
         EnvironmentVariables = jsonencode([
           # BRANCH_REF is set to the pushed tag name by the V2 trigger via
-          # #{SourceVars.BranchName}. ParseTag uses this as the tag to parse.
+          # #{SourceVars.TagName}. ParseTag uses this as the tag to parse.
           # For manual re-runs via CLI, pass GIT_TAG directly to the CodeBuild
           # project rather than via a pipeline variable.
           {
             name  = "BRANCH_REF"
-            value = "#{SourceVars.BranchName}"
+            value = "#{SourceVars.TagName}"
             type  = "PLAINTEXT"
           }
         ])
