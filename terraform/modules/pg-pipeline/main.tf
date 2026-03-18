@@ -14,9 +14,9 @@ locals {
   # Using #{ParseTag.*} keeps each pipeline execution isolated — no SSM race
   # condition when pg14 and pg16 pipelines run simultaneously.
   #
-  # GIT_TAG comes from #{ParseTag.GIT_TAG} — ParseTag resolves it from either:
-  #   - BRANCH_REF (#{packages_source.BranchName}) for V2 tag-triggered runs
-  #   - GIT_TAG pipeline variable for manual runs
+  # GIT_TAG comes from #{ParseTag.GIT_TAG} — ParseTag resolves it from
+  # BRANCH_REF (#{SourceVars.BranchName}), which the V2 trigger sets to the
+  # pushed tag name. ParseTag exports it so all downstream stages get it.
   build_env_vars = jsonencode([
     { name = "PACKAGE_NAME",     value = "#{ParseTag.PACKAGE_NAME}",     type = "PLAINTEXT" },
     { name = "PACKAGE_VERSION",  value = "#{ParseTag.PACKAGE_VERSION}",  type = "PLAINTEXT" },
@@ -38,15 +38,6 @@ resource "aws_codepipeline" "this" {
   role_arn      = var.codepipeline_role_arn
   pipeline_type = "V2"
   tags          = var.tags
-
-  # Pipeline-level variable — used for manual pipeline runs.
-  # For tag-triggered runs, ParseTag reads the tag from #{packages_source.BranchName}
-  # (set by the V2 trigger) instead. Leave empty for auto-triggered runs.
-  variable {
-    name          = "GIT_TAG"
-    default_value = ""
-    description   = "Override for manual runs only (e.g. pg${var.pg_major}/postgresql-${var.pg_major}-14.21-1). Leave empty for tag-triggered runs."
-  }
 
   artifact_store {
     type     = "S3"
@@ -136,14 +127,10 @@ resource "aws_codepipeline" "this" {
         ProjectName   = var.codebuild_parse_tag_project
         PrimarySource = "platform_source"
         EnvironmentVariables = jsonencode([
-          # For manual runs: GIT_TAG pipeline variable is set by the operator.
-          # For tag-triggered runs: GIT_TAG is "" (default); ParseTag falls back
-          # to BRANCH_REF which CodePipeline sets to the pushed tag name.
-          {
-            name  = "GIT_TAG"
-            value = "#{variables.GIT_TAG}"
-            type  = "PLAINTEXT"
-          },
+          # BRANCH_REF is set to the pushed tag name by the V2 trigger via
+          # #{SourceVars.BranchName}. ParseTag uses this as the tag to parse.
+          # For manual re-runs via CLI, pass GIT_TAG directly to the CodeBuild
+          # project rather than via a pipeline variable.
           {
             name  = "BRANCH_REF"
             value = "#{SourceVars.BranchName}"

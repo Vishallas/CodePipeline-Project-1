@@ -35,6 +35,7 @@ env:
     - PACKAGE_REVISION
     - PG_MAJOR
     - IS_RC
+    - GIT_TAG   # resolved tag — used by build/test stages for git checkout
 
 phases:
   install:
@@ -44,19 +45,20 @@ phases:
   build:
     commands:
       # ── Step 1: Parse the git tag ──────────────────────────────────────────
-      # GIT_TAG is set by EventBridge when it starts the pipeline.
+      # BRANCH_REF is injected by the pipeline from #{SourceVars.BranchName}.
+      # The V2 trigger sets this to the pushed tag name (e.g. pg14/postgresql-14-14.21-1).
       # Format: pg{N}/{package-name}-{version}-{revision}[-rcN]
       # Examples:
       #   pg14/postgresql-14-14.21-1
       #   pg14/postgresql-14-pgvector-0.7.4-1
       #   pg14/postgresql-14-14.22-1-rc1
       - |
-        python3 - "$GIT_TAG" <<'PYEOF'
+        python3 - "$BRANCH_REF" <<'PYEOF'
         import sys, re, os
 
-        tag = sys.argv[1]
+        tag = sys.argv[1].strip()
         if not tag:
-            print("ERROR: GIT_TAG is empty — was this pipeline triggered by EventBridge?",
+            print("ERROR: BRANCH_REF is empty — pipeline must be triggered by a git tag push",
                   file=sys.stderr)
             sys.exit(1)
 
@@ -91,8 +93,11 @@ phases:
         print(f"  PG_MAJOR        = {pg_major}")
         print(f"  IS_RC           = {is_rc}")
 
-        # Write to shell env file for next steps
+        # Write to shell env file for next steps.
+        # GIT_TAG is written here so it is in the shell environment when
+        # CodeBuild collects exported-variables at the end of the build.
         with open('/tmp/parsed_tag.env', 'w') as f:
+            f.write(f'export GIT_TAG="{tag}"\n')
             f.write(f'export PACKAGE_NAME="{pkg_name}"\n')
             f.write(f'export PACKAGE_VERSION="{version}"\n')
             f.write(f'export PACKAGE_REVISION="{revision}"\n')
