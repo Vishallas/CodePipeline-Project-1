@@ -109,7 +109,7 @@ phases:
       # ── Step 2: Validate version against METADATA.yml ─────────────────────
       - |
         METADATA="${CODEBUILD_SRC_DIR_packages_source}/packages/${PACKAGE_NAME}/METADATA.yml"
-        if [[ ! -f "$METADATA" ]]; then
+        if [ ! -f "$METADATA" ]; then
           echo "ERROR: METADATA.yml not found at: $METADATA"
           echo "  Package '${PACKAGE_NAME}' does not exist on this branch."
           exit 1
