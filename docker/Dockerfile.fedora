@@ -39,6 +39,37 @@ RUN dnf install -y \
     autoconf \
     automake \
     libtool \
+    perl \
+    perl-devel \
+    perl-ExtUtils-Embed \
+    perl-ExtUtils-MakeMaker \
+    perl-generators \
+  && dnf clean all
+
+# PostgreSQL build dependencies
+RUN dnf install -y \
+    bison \
+    flex \
+    readline-devel \
+    zlib-devel \
+    openssl-devel \
+    libxml2-devel \
+    libxslt-devel \
+    pam-devel \
+    openldap-devel \
+    krb5-devel \
+    e2fsprogs-devel \
+    libicu-devel \
+    libselinux-devel \
+    systemd-devel \
+    tcl-devel \
+    lz4-devel \
+    libzstd-devel \
+    libuuid-devel \
+    libcurl-devel \
+    systemtap-sdt-devel \
+    llvm-devel \
+    clang-devel \
   && dnf clean all
 
 # PostgreSQL PGDG repository for Fedora

@@ -81,6 +81,7 @@ RUN set -eux; \
         libzstd-devel \
         libuuid-devel \
         libcurl-devel \
+        systemtap-sdt-devel \
     && dnf clean all
 
 # ------------------------------------------------------------
