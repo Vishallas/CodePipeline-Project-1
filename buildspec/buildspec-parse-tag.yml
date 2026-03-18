@@ -106,6 +106,16 @@ phases:
         PYEOF
       - . /tmp/parsed_tag.env
 
+      # ── Step 1b: Checkout the tagged commit in packages_source ────────────
+      # The source action checks out the branch HEAD (pg14), not the tagged
+      # commit — because BranchName in the source action is the branch, and
+      # CodePipeline does not update the branch for you. We must pin to the
+      # exact tagged commit ourselves so METADATA.yml and all package files
+      # reflect what was tagged, not the current (possibly ahead) branch tip.
+      - git -C "$CODEBUILD_SRC_DIR_packages_source" fetch --tags origin
+      - git -C "$CODEBUILD_SRC_DIR_packages_source" checkout "$GIT_TAG"
+      - echo "packages_source pinned to tag: $GIT_TAG ($(git -C $CODEBUILD_SRC_DIR_packages_source rev-parse --short HEAD))"
+
       # ── Step 2: Validate version against METADATA.yml ─────────────────────
       - |
         METADATA="${CODEBUILD_SRC_DIR_packages_source}/packages/${PACKAGE_NAME}/METADATA.yml"
