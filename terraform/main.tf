@@ -657,6 +657,10 @@ resource "aws_codebuild_project" "build_rpm_arm64" {
 }
 
 # ── Test install amd64 (Stage 4) ─────────────────────────────────────────────
+# Uses Amazon Linux x86_64 to match the arm64 test project — there is no Ubuntu
+# ARM CodeBuild image, so both test projects use Amazon Linux for consistency.
+# The buildspec starts dockerd manually; actual test containers are distro images
+# pulled from public registries, not the ECR build images.
 
 resource "aws_codebuild_project" "test_install" {
   name          = "mydbops-test-install"
@@ -669,7 +673,7 @@ resource "aws_codebuild_project" "test_install" {
   environment {
     type            = "LINUX_CONTAINER"
     compute_type    = "BUILD_GENERAL1_MEDIUM"
-    image           = var.codebuild_image
+    image           = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
     privileged_mode = true
   }
 
@@ -689,9 +693,10 @@ resource "aws_codebuild_project" "test_install" {
 }
 
 # ── Test install arm64 (Stage 4) ─────────────────────────────────────────────
-# Runs the same buildspec-test.yml on an ARM host. The test script detects
-# host arch via `uname -m` and skips amd64 packages automatically, so only
-# arm64 targets (ubuntu-22/24-arm64, epel-8/9-aarch64) are tested here.
+# Runs the same buildspec-test.yml on an Amazon Linux ARM host (no Ubuntu ARM
+# CodeBuild image exists). The test script detects host arch via `uname -m` and
+# skips amd64 packages automatically, so only arm64 targets
+# (ubuntu-22/24-arm64, epel-8/9-aarch64) are tested here.
 
 resource "aws_codebuild_project" "test_install_arm64" {
   name          = "mydbops-test-install-arm64"
