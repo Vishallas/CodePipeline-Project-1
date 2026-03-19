@@ -214,20 +214,40 @@ resource "aws_codepipeline" "this" {
     }
   }
 
-  # ── Stage 4: Test ─────────────────────────────────────────────────────────────
+  # ── Stage 4: Test (2 parallel jobs — one per arch) ────────────────────────────
+  # Both actions share run_order=1 so they run concurrently.
+  # Each CodeBuild project runs on its native host arch; the test script detects
+  # the host via `uname -m` and skips packages built for the other arch.
   stage {
     name = "Test"
 
     action {
-      name            = "InstallTest"
+      name            = "InstallTest-amd64"
       category        = "Build"
       owner           = "AWS"
       provider        = "CodeBuild"
       version         = "1"
+      run_order       = 1
       input_artifacts = ["packages_source", "platform_source"]
 
       configuration = {
         ProjectName          = var.codebuild_test_project
+        PrimarySource        = "platform_source"
+        EnvironmentVariables = local.build_env_vars
+      }
+    }
+
+    action {
+      name            = "InstallTest-arm64"
+      category        = "Build"
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      version         = "1"
+      run_order       = 1
+      input_artifacts = ["packages_source", "platform_source"]
+
+      configuration = {
+        ProjectName          = var.codebuild_test_arm64_project
         PrimarySource        = "platform_source"
         EnvironmentVariables = local.build_env_vars
       }

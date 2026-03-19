@@ -68,7 +68,13 @@ variable "codebuild_rpm_arm64_project" {
 }
 
 variable "codebuild_test_project" {
-  type = string
+  type        = string
+  description = "CodeBuild project name for x86_64 install tests"
+}
+
+variable "codebuild_test_arm64_project" {
+  type        = string
+  description = "CodeBuild project name for aarch64 install tests"
 }
 
 variable "codebuild_repo_updater_project" {

@@ -656,11 +656,11 @@ resource "aws_codebuild_project" "build_rpm_arm64" {
   tags = var.tags
 }
 
-# ── Test install (Stage 4) ────────────────────────────────────────────────────
+# ── Test install amd64 (Stage 4) ─────────────────────────────────────────────
 
 resource "aws_codebuild_project" "test_install" {
   name          = "mydbops-test-install"
-  description   = "Install-tests packages from S3 staging path in clean containers"
+  description   = "Install-tests x86_64 packages from S3 staging in clean containers"
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 30
 
@@ -681,6 +681,41 @@ resource "aws_codebuild_project" "test_install" {
   logs_config {
     cloudwatch_logs {
       group_name  = "/aws/codebuild/mydbops-test-install"
+      stream_name = ""
+    }
+  }
+
+  tags = var.tags
+}
+
+# ── Test install arm64 (Stage 4) ─────────────────────────────────────────────
+# Runs the same buildspec-test.yml on an ARM host. The test script detects
+# host arch via `uname -m` and skips amd64 packages automatically, so only
+# arm64 targets (ubuntu-22/24-arm64, epel-8/9-aarch64) are tested here.
+
+resource "aws_codebuild_project" "test_install_arm64" {
+  name          = "mydbops-test-install-arm64"
+  description   = "Install-tests aarch64 packages from S3 staging in clean containers"
+  service_role  = aws_iam_role.codebuild.arn
+  build_timeout = 30
+
+  artifacts { type = "CODEPIPELINE" }
+
+  environment {
+    type            = "ARM_CONTAINER"
+    compute_type    = "BUILD_GENERAL1_LARGE"
+    image           = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
+    privileged_mode = true
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "buildspec/buildspec-test.yml"
+  }
+
+  logs_config {
+    cloudwatch_logs {
+      group_name  = "/aws/codebuild/mydbops-test-install-arm64"
       stream_name = ""
     }
   }
@@ -727,6 +762,7 @@ module "pg_pipeline" {
   codebuild_rpm_amd64_project    = aws_codebuild_project.build_rpm_amd64.name
   codebuild_rpm_arm64_project    = aws_codebuild_project.build_rpm_arm64.name
   codebuild_test_project         = aws_codebuild_project.test_install.name
+  codebuild_test_arm64_project   = aws_codebuild_project.test_install_arm64.name
   codebuild_repo_updater_project = module.repo_updater.project_name
 
   tags = var.tags

@@ -16,6 +16,11 @@ FROM fedora:${FEDORA_VERSION}
 
 ARG PG_VERSIONS="14 15 16 17"
 
+# Purge any stale/corrupted metadata from the base image layer before installing.
+# Without this, Docker layer cache can preserve a partial zchunk state that causes
+# "Unable to read zchunk lead" errors on first dnf install.
+RUN dnf clean all && dnf makecache
+
 # Base build toolchain
 RUN dnf install -y \
     gcc \
@@ -52,7 +57,10 @@ RUN dnf install -y \
     flex \
     readline-devel \
     zlib-devel \
+    gettext \
+    gettext-devel \
     openssl-devel \
+    openssl-devel-engine \
     libxml2-devel \
     libxslt-devel \
     pam-devel \
@@ -61,6 +69,9 @@ RUN dnf install -y \
     e2fsprogs-devel \
     libicu-devel \
     libselinux-devel \
+    libsepol-devel \
+    selinux-policy \
+    selinux-policy-devel \
     systemd-devel \
     tcl-devel \
     lz4-devel \
@@ -70,6 +81,9 @@ RUN dnf install -y \
     systemtap-sdt-devel \
     llvm-devel \
     clang-devel \
+    python3-devel \
+    pkgconf-pkg-config \
+    libedit-devel \
   && dnf clean all
 
 # PostgreSQL PGDG repository for Fedora
@@ -98,3 +112,13 @@ RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" \
   && rm -rf /tmp/aws /tmp/awscliv2.zip
 
 WORKDIR /build
+
+# ── OCI image metadata ────────────────────────────────────────────────────────
+ARG BUILD_DATE=""
+ARG GIT_COMMIT=""
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.source="https://github.com/mydbopsllp/mydbops-pg-platform" \
+      com.mydbops.pg-versions="${PG_VERSIONS}" \
+      com.mydbops.base-os="fedora-${FEDORA_VERSION}"

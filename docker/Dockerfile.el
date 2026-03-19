@@ -129,3 +129,13 @@ RUN set -eux; \
     rm -rf /tmp/aws /tmp/aws.zip
 
 WORKDIR /build
+
+# ── OCI image metadata ────────────────────────────────────────────────────────
+ARG BUILD_DATE=""
+ARG GIT_COMMIT=""
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.source="https://github.com/mydbopsllp/mydbops-pg-platform" \
+      com.mydbops.pg-versions="${PG_VERSIONS}" \
+      com.mydbops.base-os="almalinux-${EL_VERSION}"

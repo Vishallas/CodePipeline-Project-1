@@ -16,7 +16,8 @@
 #   push       [--target TAG]  Push one or all images to ECR
 #   build-push [--target TAG]  Build then immediately push (atomic for CI use)
 #   pull       [--target TAG]  Pull one or all images from ECR
-#   list                       List all images + ECR existence status
+#   list                       List all images with ECR metadata (pushed date, digest, size, scan)
+#   inspect    --target TAG    Deep-dive: full digest, labels, scan findings breakdown
 #   scan       [--target TAG]  Trigger ECR vulnerability scan
 #   login                      ECR docker login only
 #
@@ -112,7 +113,7 @@ ALL_TAGS=(
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        setup-builder|build|build-push|push|pull|list|scan|login) CMD="$1"; shift ;;
+        setup-builder|build|build-push|push|pull|list|inspect|scan|login) CMD="$1"; shift ;;
         --target)      TARGET="$2";      shift 2 ;;
         --pg-versions) PG_VERSIONS="$2"; shift 2 ;;
         --account)     ECR_ACCOUNT_ID="$2"; shift 2 ;;
@@ -125,7 +126,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$CMD" ]]; then
-    echo "Usage: manage-build-images.sh <setup-builder|build|build-push|push|pull|list|scan|login> [options]"
+    echo "Usage: manage-build-images.sh <setup-builder|build|build-push|push|pull|list|inspect|scan|login> [options]"
     exit 1
 fi
 
@@ -221,6 +222,13 @@ cmd_build() {
             [[ -n "$arg" ]] && build_arg_flags+=(--build-arg "$arg")
         done
 
+        # Embed OCI provenance labels
+        local build_date
+        build_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        local git_commit
+        git_commit=$(git -C "$PLATFORM_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        build_arg_flags+=(--build-arg "BUILD_DATE=${build_date}" --build-arg "GIT_COMMIT=${git_commit}")
+
         local no_cache_flag=()
         [[ $NO_CACHE -eq 1 ]] && no_cache_flag=(--no-cache)
 
@@ -297,27 +305,57 @@ cmd_pull() {
 cmd_list() {
     require_ecr_account
 
-    printf "%-30s %-14s %-12s %s\n" "TAG" "PLATFORM" "LOCAL" "ECR"
-    printf "%-30s %-14s %-12s %s\n" "---" "--------" "-----" "---"
+    printf "%-30s %-14s %-9s %-9s %-18s %-9s %-7s %s\n" \
+        "TAG" "PLATFORM" "LOCAL" "ECR" "PUSHED" "DIGEST" "SIZE" "SCAN"
+    printf "%-30s %-14s %-9s %-9s %-18s %-9s %-7s %s\n" \
+        "---" "--------" "-----" "---" "------" "------" "----" "----"
 
     for tag in "${ALL_TAGS[@]}"; do
         local platform="${IMAGE_PLATFORM[$tag]}"
-        local ecr_tag
-        ecr_tag=$(full_image "$tag")
 
         local local_status="absent"
         docker image inspect "${ECR_REPO}:${tag}" &>/dev/null && local_status="present"
 
-        local ecr_status="absent"
-        if aws ecr describe-images \
-                --repository-name "$ECR_REPO" \
-                --region "$ECR_REGION" \
-                --image-ids imageTag="$tag" \
-                &>/dev/null 2>&1; then
+        # Query ECR for enriched metadata
+        local ecr_json=""
+        ecr_json=$(aws ecr describe-images \
+            --repository-name "$ECR_REPO" \
+            --region "$ECR_REGION" \
+            --image-ids imageTag="$tag" \
+            --query 'imageDetails[0]' \
+            --output json 2>/dev/null || echo "null")
+
+        local ecr_status pushed digest size scan
+        if [[ "$ecr_json" == "null" || -z "$ecr_json" ]]; then
+            ecr_status="absent"
+            pushed="—"
+            digest="—"
+            size="—"
+            scan="—"
+        else
             ecr_status="present"
+            pushed=$(echo "$ecr_json" | jq -r '
+                if .imagePushedAt then
+                    (.imagePushedAt | strftime("%Y-%m-%d %H:%M"))
+                else "—" end' 2>/dev/null || echo "—")
+            digest=$(echo "$ecr_json" | jq -r '
+                if .imageDigest then
+                    (.imageDigest | ltrimstr("sha256:") | .[0:7])
+                else "—" end' 2>/dev/null || echo "—")
+            size=$(echo "$ecr_json" | jq -r '
+                if .imageSizeInBytes then
+                    ((.imageSizeInBytes / 1048576) | floor | tostring) + "MB"
+                else "—" end' 2>/dev/null || echo "—")
+            scan=$(echo "$ecr_json" | jq -r '
+                if .imageScanFindingsSummary.findingSeverityCounts then
+                    ((.imageScanFindingsSummary.findingSeverityCounts.CRITICAL // 0 | tostring) + "C/" +
+                     (.imageScanFindingsSummary.findingSeverityCounts.HIGH    // 0 | tostring) + "H")
+                else "—" end' 2>/dev/null || echo "—")
         fi
 
-        printf "%-30s %-14s %-12s %s\n" "$tag" "$platform" "$local_status" "$ecr_status"
+        printf "%-30s %-14s %-9s %-9s %-18s %-9s %-7s %s\n" \
+            "$tag" "$platform" "$local_status" "$ecr_status" \
+            "$pushed" "$digest" "$size" "$scan"
     done
 }
 
@@ -340,6 +378,98 @@ cmd_scan() {
     log_info "Or: aws ecr describe-image-scan-findings --repository-name ${ECR_REPO} --image-id imageTag=<TAG>"
 }
 
+cmd_inspect() {
+    require_ecr_account
+
+    if [[ -z "$TARGET" ]]; then
+        log_error "inspect requires --target TAG"
+        exit 1
+    fi
+
+    local tag="$TARGET"
+
+    # ── ECR image details ──────────────────────────────────────────────────
+    log_step "Fetching ECR image details: ${tag}"
+    local ecr_json=""
+    ecr_json=$(aws ecr describe-images \
+        --repository-name "$ECR_REPO" \
+        --region "$ECR_REGION" \
+        --image-ids imageTag="$tag" \
+        --query 'imageDetails[0]' \
+        --output json 2>/dev/null || echo "null")
+
+    if [[ "$ecr_json" == "null" || -z "$ecr_json" ]]; then
+        log_warn "Image '${tag}' not found in ECR — showing local inspect only"
+    else
+        echo ""
+        echo "=== ECR image details: ${tag} ==="
+        echo "$ecr_json" | jq -r '
+            "  Full digest : " + (.imageDigest // "—"),
+            "  Pushed at   : " + ((.imagePushedAt | strftime("%Y-%m-%dT%H:%M:%SZ")) // "—"),
+            "  Size        : " + (if .imageSizeInBytes then
+                                    ((.imageSizeInBytes / 1048576 * 10 | floor) / 10 | tostring) + " MB"
+                                  else "—" end)'
+    fi
+
+    # ── Labels (from local docker inspect if present, else ECR config) ─────
+    echo ""
+    echo "=== OCI + mydbops labels ==="
+    if docker image inspect "${ECR_REPO}:${tag}" &>/dev/null; then
+        docker image inspect "${ECR_REPO}:${tag}" \
+            | jq -r '.[0].Config.Labels // {} | to_entries[] | "  \(.key) = \(.value)"'
+    else
+        log_info "Image not present locally — labels not available without pulling"
+        log_info "Run: manage-build-images.sh pull --target ${tag}  then re-inspect"
+    fi
+
+    # ── ECR vulnerability scan findings ───────────────────────────────────
+    echo ""
+    echo "=== Vulnerability scan findings ==="
+    local scan_json=""
+    scan_json=$(aws ecr describe-image-scan-findings \
+        --repository-name "$ECR_REPO" \
+        --region "$ECR_REGION" \
+        --image-id imageTag="$tag" \
+        --output json 2>/dev/null || echo "null")
+
+    if [[ "$scan_json" == "null" || -z "$scan_json" ]]; then
+        log_info "No scan findings available (image may not be in ECR or scan not yet complete)"
+    else
+        local scan_status
+        scan_status=$(echo "$scan_json" | jq -r '.imageScanStatus.status // "UNKNOWN"')
+        echo "  Scan status: ${scan_status}"
+
+        echo "$scan_json" | jq -r '
+            .imageScanFindings.findingSeverityCounts // {} |
+            to_entries | sort_by(
+                if .key == "CRITICAL" then 0
+                elif .key == "HIGH"   then 1
+                elif .key == "MEDIUM" then 2
+                elif .key == "LOW"    then 3
+                else 4 end
+            ) | .[] | "  \(.key): \(.value)"'
+
+        local total
+        total=$(echo "$scan_json" | jq '[.imageScanFindings.findings[]? | .severity] | length')
+        echo "  ─────────────────"
+        echo "  Total findings: ${total}"
+
+        # Show top 10 findings by severity
+        echo ""
+        echo "  Top findings:"
+        echo "$scan_json" | jq -r '
+            .imageScanFindings.findings // [] |
+            sort_by(
+                if .severity == "CRITICAL" then 0
+                elif .severity == "HIGH"   then 1
+                elif .severity == "MEDIUM" then 2
+                elif .severity == "LOW"    then 3
+                else 4 end
+            ) | .[0:10][] |
+            "  [\(.severity)] \(.name) — \(.description // "no description" | .[0:80])"'
+    fi
+}
+
 # ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 case "$CMD" in
@@ -349,6 +479,7 @@ case "$CMD" in
     push)          cmd_push          ;;
     pull)          cmd_pull          ;;
     list)          cmd_list          ;;
+    inspect)       cmd_inspect       ;;
     scan)          cmd_scan          ;;
     login)         cmd_login         ;;
 esac
