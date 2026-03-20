@@ -1,33 +1,18 @@
 version: 0.2
 # ─────────────────────────────────────────────────────────────────────────────
-# buildspec-parse-tag.yml — Stage 2: Parse git tag, validate, write SSM
-#
-# Replaces Lambda. Receives GIT_TAG as a CodePipeline pipeline variable
-# (injected by EventBridge at pipeline start).
+# buildspec-parse-tag.yml — Stage 2: Parse git tag and validate
 #
 # Reads:
-#   - GIT_TAG env var  (pipeline variable set by EventBridge)
+#   - BRANCH_REF env var  (from #{variables.GIT_TAG} pipeline variable)
+#     Auto-triggered: empty — tag discovered via git describe on packages_source
+#     Manual run: caller injects GIT_TAG via --variables
 #   - packages_source/packages/{name}/METADATA.yml  (version validation)
-#   - SSM /mydbops/cicd/build/S3_BUCKET             (static config)
-#
-# Writes to SSM (dynamic build vars, overwritten each run):
-#   - /mydbops/cicd/build/PACKAGE_NAME
-#   - /mydbops/cicd/build/PACKAGE_VERSION
-#   - /mydbops/cicd/build/PACKAGE_REVISION
-#   - /mydbops/cicd/build/PG_MAJOR
-#   - /mydbops/cicd/build/GIT_TAG
-#   - /mydbops/cicd/build/IS_RC
 #
 # Exports as CodeBuild pipeline variables (namespace: ParseTag):
-#   PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION, PG_MAJOR, IS_RC
+#   PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION, PG_MAJOR, IS_RC, GIT_TAG
 # ─────────────────────────────────────────────────────────────────────────────
 
 env:
-  # Static infrastructure config — read from SSM, never change per build
-  parameter-store:
-    S3_BUCKET:   /mydbops/cicd/build/S3_BUCKET
-    ECR_REGION:  /mydbops/cicd/ecr/region
-
   # These are exported back to the pipeline for downstream stages
   exported-variables:
     - PACKAGE_NAME
@@ -65,7 +50,7 @@ phases:
           echo "Discovered tag: $BRANCH_REF"
         fi
 
-      # ── Step 1b: Parse the git tag ────────────────────────────────────────
+      # ── Step 1b: Parse the resolved tag ──────────────────────────────────
       # Format: pg{N}/{package-name}-{version}-{revision}[-rcN]
       # Examples:
       #   pg14/postgresql-14-14.21-1
@@ -125,7 +110,7 @@ phases:
         PYEOF
       - . /tmp/parsed_tag.env
 
-      # ── Step 1b: Checkout the tagged commit in packages_source ────────────
+      # ── Step 2: Checkout the tagged commit in packages_source ────────────
       # The source action checks out the branch HEAD (pg14), not the tagged
       # commit — BranchName in the source action is the branch, and
       # CodePipeline does not update the branch for you. Pin to the exact
@@ -135,7 +120,7 @@ phases:
         SHORT=$(git -C "$CODEBUILD_SRC_DIR_packages_source" rev-parse --short HEAD)
         echo "packages_source pinned to $GIT_TAG ($SHORT)"
 
-      # ── Step 2: Validate version against METADATA.yml ─────────────────────
+      # ── Step 3: Validate version against METADATA.yml ─────────────────────
       - |
         METADATA="${CODEBUILD_SRC_DIR_packages_source}/packages/${PACKAGE_NAME}/METADATA.yml"
         if [ ! -f "$METADATA" ]; then
@@ -178,28 +163,5 @@ phases:
 
         print(f"Validation passed: {actual_name} {actual_ver}-{actual_revision}")
         PYEOF
-
-      # ── Step 3: Write dynamic build vars to SSM ───────────────────────────
-      # These are overwritten on every pipeline run. Downstream stages read them.
-      - |
-        REGION="${ECR_REGION:-us-east-1}"
-        for param in \
-            "PACKAGE_NAME:$PACKAGE_NAME" \
-            "PACKAGE_VERSION:$PACKAGE_VERSION" \
-            "PACKAGE_REVISION:$PACKAGE_REVISION" \
-            "PG_MAJOR:$PG_MAJOR" \
-            "GIT_TAG:$GIT_TAG" \
-            "IS_RC:$IS_RC"; do
-          key="${param%%:*}"
-          val="${param#*:}"
-          aws ssm put-parameter \
-            --region "$REGION" \
-            --name "/mydbops/cicd/build/${key}" \
-            --value "$val" \
-            --type String \
-            --overwrite \
-            --no-cli-pager
-          echo "SSM written: /mydbops/cicd/build/${key} = ${val}"
-        done
 
       - echo "ParseTag complete — PACKAGE_NAME=${PACKAGE_NAME} VERSION=${PACKAGE_VERSION}-${PACKAGE_REVISION} IS_RC=${IS_RC}"
