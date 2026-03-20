@@ -84,6 +84,8 @@ RUN dnf install -y \
     python3-devel \
     pkgconf-pkg-config \
     libedit-devel \
+    docbook-dtds \
+    docbook-style-xsl \
   && dnf clean all
 
 # PostgreSQL PGDG repository for Fedora

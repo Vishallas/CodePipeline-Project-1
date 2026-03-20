@@ -4,7 +4,8 @@ version: 0.2
 #
 # Reads:
 #   - BRANCH_REF env var  (from #{variables.GIT_TAG} pipeline variable)
-#     Auto-triggered: empty — tag discovered via git describe on packages_source
+#     Auto-triggered: empty — tag discovered via git tag --points-at HEAD,
+#       scoped to pg${PG_MAJOR_HINT}/*; falls back to most recent tag by version
 #     Manual run: caller injects GIT_TAG via --variables
 #   - packages_source/packages/{name}/METADATA.yml  (version validation)
 #
@@ -42,12 +43,21 @@ phases:
           # Fetch all tags — CODEBUILD_CLONE_REF clones the branch ref only;
           # tags may not be present in the local clone without an explicit fetch.
           git -C "$CODEBUILD_SRC_DIR_packages_source" fetch --tags --quiet
+          # Step 1: exact match — find tags pointing to current HEAD commit.
+          # Scoped to pg${PG_MAJOR_HINT}/* to avoid picking up tags from other PG majors.
           BRANCH_REF=$(git -C "$CODEBUILD_SRC_DIR_packages_source" \
-            describe --tags --exact-match HEAD 2>/dev/null || true)
+            tag --points-at HEAD | grep "^pg${PG_MAJOR_HINT}/" | head -1 || true)
+          # Step 2: fallback — most recent tag by version (handles race condition where
+          # branch has advanced past the tagged commit between push and Source action).
           if [ -z "$BRANCH_REF" ]; then
-            echo "ERROR: Could not determine tag — HEAD of packages_source is not exactly tagged."
+            echo "HEAD is not tagged — falling back to most recent pg${PG_MAJOR_HINT}/* tag"
+            BRANCH_REF=$(git -C "$CODEBUILD_SRC_DIR_packages_source" \
+              tag -l "pg${PG_MAJOR_HINT}/*" --sort=-version:refname | head -1 || true)
+          fi
+          if [ -z "$BRANCH_REF" ]; then
+            echo "ERROR: Could not determine tag from packages_source."
             echo "For manual runs supply GIT_TAG:"
-            echo "  aws codepipeline start-pipeline-execution --name ${CODEBUILD_INITIATOR##*/} --variables name=GIT_TAG,value=pg14/postgresql-14-14.21-1"
+            echo "  aws codepipeline start-pipeline-execution --name ${CODEBUILD_INITIATOR##*/} --variables name=GIT_TAG,value=pg${PG_MAJOR_HINT}/postgresql-${PG_MAJOR_HINT}-17.5-1"
             exit 1
           fi
           echo "Discovered tag: $BRANCH_REF"

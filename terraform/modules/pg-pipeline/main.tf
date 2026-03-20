@@ -137,11 +137,18 @@ resource "aws_codepipeline" "this" {
         EnvironmentVariables = jsonencode([
           # BRANCH_REF comes from the GIT_TAG pipeline variable.
           # Auto-triggered (V2 trigger): GIT_TAG="" — ParseTag discovers the tag
-          # from packages_source via `git describe --tags --exact-match HEAD`.
+          # from packages_source scoped to pg${PG_MAJOR_HINT}/* pattern.
           # Manual run: caller provides GIT_TAG via --variables or the Console form.
           {
             name  = "BRANCH_REF"
             value = "#{variables.GIT_TAG}"
+            type  = "PLAINTEXT"
+          },
+          # PG_MAJOR_HINT is a static hint used by ParseTag to scope git tag discovery.
+          # Always resolves — not a pipeline variable reference. Value: "14", "15", etc.
+          {
+            name  = "PG_MAJOR_HINT"
+            value = tostring(var.pg_major)
             type  = "PLAINTEXT"
           }
         ])
