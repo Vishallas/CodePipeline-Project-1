@@ -39,6 +39,9 @@ phases:
       - |
         if [ -z "$BRANCH_REF" ]; then
           echo "GIT_TAG is empty (auto-triggered run) — discovering tag from packages_source"
+          # Fetch all tags — CODEBUILD_CLONE_REF clones the branch ref only;
+          # tags may not be present in the local clone without an explicit fetch.
+          git -C "$CODEBUILD_SRC_DIR_packages_source" fetch --tags --quiet
           BRANCH_REF=$(git -C "$CODEBUILD_SRC_DIR_packages_source" \
             describe --tags --exact-match HEAD 2>/dev/null || true)
           if [ -z "$BRANCH_REF" ]; then

@@ -83,8 +83,10 @@ RUN apt-get update -qq
 
 # ------------------------------------------------------------
 # Build dependencies (works for 20 / 22 / 24)
+# Derived from pg16/pg17 debian/control Build-Depends
 # ------------------------------------------------------------
 RUN apt-get install -y -qq --no-install-recommends \
+    autoconf \
     bison \
     flex \
     clang \
@@ -93,26 +95,30 @@ RUN apt-get install -y -qq --no-install-recommends \
     docbook-xml \
     docbook-xsl \
     xsltproc \
+    gettext \
+    libicu-dev \
     libkrb5-dev \
     libldap2-dev \
     liblz4-dev \
+    liblz4-tool \
     libpam0g-dev \
     libperl-dev \
     libreadline-dev \
     libselinux1-dev \
+    libssl-dev \
     libsystemd-dev \
+    libxml2-dev \
     libxml2-utils \
     libxslt1-dev \
+    libzstd-dev \
     pkgconf \
     postgresql-common-dev \
     python3-dev \
-    libssl-dev \
-    liblz4-tool \
-    libzstd-dev \
     systemtap-sdt-dev \
     tcl-dev \
     uuid-dev \
     zlib1g-dev \
+    zstd \
  && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------
