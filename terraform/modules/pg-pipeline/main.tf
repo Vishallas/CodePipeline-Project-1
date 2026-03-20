@@ -46,20 +46,19 @@ resource "aws_codepipeline" "this" {
   }
 
   # ── Pipeline-level variable ───────────────────────────────────────────────────
-  # GIT_TAG is always resolved (to "" default or the injected value) so it never
-  # causes "could not be resolved" errors on manual executions.
-  # Auto-triggered runs: GIT_TAG="" — ParseTag discovers the tag from git.
-  # Manual runs: caller passes GIT_TAG via --variables or the Console input form.
+  # default_value = "auto" is intentional: AWS treats default_value = "" as
+  # "required" and rejects V2 native trigger executions with
+  # "Values for required variables haven't been provided: GIT_TAG".
+  # "auto" is a sentinel that ParseTag normalises to "" to trigger git
+  # autodiscovery. Manual runs override it via --variables name=GIT_TAG,value=...
   variable {
     name          = "GIT_TAG"
-    default_value = ""
+    default_value = "auto"
   }
 
-  # ── V2 trigger — fire on git tag push, pg{N}/* pattern ───────────────────────
-  # AWS handles the CodeConnections webhook → pipeline start internally.
-  # When fired, GIT_TAG pipeline variable is "" (V2 trigger cannot inject vars);
-  # ParseTag discovers the tag from git. For manual runs, caller supplies GIT_TAG.
-  # NOTE: the EventBridge rule below is kept but DISABLED to prevent double-firing.
+  # V2 native trigger — fires when a tag matching pg{N}/* is pushed to the
+  # packages repo. GIT_TAG defaults to "auto"; ParseTag normalises it to ""
+  # and discovers the real tag from git. No EventBridge required.
   trigger {
     provider_type = "CodeStarSourceConnection"
     git_configuration {
@@ -136,9 +135,10 @@ resource "aws_codepipeline" "this" {
         PrimarySource = "platform_source"
         EnvironmentVariables = jsonencode([
           # BRANCH_REF comes from the GIT_TAG pipeline variable.
-          # Auto-triggered (V2 trigger): GIT_TAG="" — ParseTag discovers the tag
-          # from packages_source scoped to pg${PG_MAJOR_HINT}/* pattern.
-          # Manual run: caller provides GIT_TAG via --variables or the Console form.
+          # Auto-triggered (V2 native trigger): GIT_TAG = "auto" (default_value).
+          # ParseTag normalises "auto" → "" and discovers the real tag from git.
+          # Manual run: caller provides GIT_TAG via --variables or the Console form,
+          # which overrides the default; ParseTag uses that value directly.
           {
             name  = "BRANCH_REF"
             value = "#{variables.GIT_TAG}"
@@ -345,8 +345,8 @@ resource "aws_codepipeline" "this" {
 resource "aws_cloudwatch_event_rule" "tag_trigger" {
   name        = local.eb_rule_name
   description = "Start ${local.pipeline_name} when a pg${var.pg_major}/* git tag is pushed"
-  # DISABLED — pipeline now uses V2 native trigger (trigger block above).
-  # Kept here to avoid destroying the resource; delete after V2 trigger is confirmed working.
+  # DISABLED — V2 native trigger handles tag pushes. EventBridge rule kept for
+  # reference but is not used. Re-enable only if V2 trigger is removed.
   state       = "DISABLED"
   tags        = var.tags
 

@@ -38,8 +38,11 @@ phases:
       #     --name mydbops-pkg-pg14 \
       #     --variables name=GIT_TAG,value=pg14/postgresql-14-14.21-1
       - |
+        # V2 native trigger cannot inject variable values; default is "auto".
+        # Normalise "auto" → "" so the autodiscovery block fires correctly.
+        [ "$BRANCH_REF" = "auto" ] && BRANCH_REF=""
         if [ -z "$BRANCH_REF" ]; then
-          echo "GIT_TAG is empty (auto-triggered run) — discovering tag from packages_source"
+          echo "GIT_TAG is empty/auto (auto-triggered run) — discovering tag from packages_source"
           # Fetch all tags — CODEBUILD_CLONE_REF clones the branch ref only;
           # tags may not be present in the local clone without an explicit fetch.
           git -C "$CODEBUILD_SRC_DIR_packages_source" fetch --tags --quiet
