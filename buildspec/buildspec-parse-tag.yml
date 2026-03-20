@@ -44,9 +44,28 @@ phases:
 
   build:
     commands:
-      # ── Step 1: Parse the git tag ──────────────────────────────────────────
-      # BRANCH_REF is injected by the pipeline from #{SourceVars.BranchName}.
-      # The V2 trigger sets this to the pushed tag name (e.g. pg14/postgresql-14-14.21-1).
+      # ── Step 1: Resolve BRANCH_REF ────────────────────────────────────────
+      # BRANCH_REF comes from the GIT_TAG pipeline variable (#{variables.GIT_TAG}).
+      # Auto-triggered (V2 trigger): GIT_TAG="" — discover the tag from git.
+      # Manual run: caller provides GIT_TAG via --variables or the Console form:
+      #   aws codepipeline start-pipeline-execution \
+      #     --name mydbops-pkg-pg14 \
+      #     --variables name=GIT_TAG,value=pg14/postgresql-14-14.21-1
+      - |
+        if [ -z "$BRANCH_REF" ]; then
+          echo "GIT_TAG is empty (auto-triggered run) — discovering tag from packages_source"
+          BRANCH_REF=$(git -C "$CODEBUILD_SRC_DIR_packages_source" \
+            describe --tags --exact-match HEAD 2>/dev/null || true)
+          if [ -z "$BRANCH_REF" ]; then
+            echo "ERROR: Could not determine tag — HEAD of packages_source is not exactly tagged."
+            echo "For manual runs supply GIT_TAG:"
+            echo "  aws codepipeline start-pipeline-execution --name ${CODEBUILD_INITIATOR##*/} --variables name=GIT_TAG,value=pg14/postgresql-14-14.21-1"
+            exit 1
+          fi
+          echo "Discovered tag: $BRANCH_REF"
+        fi
+
+      # ── Step 1b: Parse the git tag ────────────────────────────────────────
       # Format: pg{N}/{package-name}-{version}-{revision}[-rcN]
       # Examples:
       #   pg14/postgresql-14-14.21-1

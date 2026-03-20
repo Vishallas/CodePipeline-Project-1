@@ -15,8 +15,9 @@ locals {
   # condition when pg14 and pg16 pipelines run simultaneously.
   #
   # GIT_TAG comes from #{ParseTag.GIT_TAG} — ParseTag resolves it from
-  # BRANCH_REF (#{SourceVars.TagName}), which the V2 trigger sets to the
-  # pushed tag name. ParseTag exports it so all downstream stages get it.
+  # BRANCH_REF (#{variables.GIT_TAG}). For auto-triggered runs the tag is
+  # self-discovered from git; for manual runs the caller injects it via --variables.
+  # ParseTag exports it so all downstream stages get it.
   build_env_vars = jsonencode([
     { name = "PACKAGE_NAME",     value = "#{ParseTag.PACKAGE_NAME}",     type = "PLAINTEXT" },
     { name = "PACKAGE_VERSION",  value = "#{ParseTag.PACKAGE_VERSION}",  type = "PLAINTEXT" },
@@ -44,10 +45,20 @@ resource "aws_codepipeline" "this" {
     location = var.artifacts_bucket
   }
 
+  # ── Pipeline-level variable ───────────────────────────────────────────────────
+  # GIT_TAG is always resolved (to "" default or the injected value) so it never
+  # causes "could not be resolved" errors on manual executions.
+  # Auto-triggered runs: GIT_TAG="" — ParseTag discovers the tag from git.
+  # Manual runs: caller passes GIT_TAG via --variables or the Console input form.
+  variable {
+    name          = "GIT_TAG"
+    default_value = ""
+  }
+
   # ── V2 trigger — fire on git tag push, pg{N}/* pattern ───────────────────────
-  # Replaces EventBridge rule. AWS handles the CodeConnections webhook → pipeline
-  # start internally; no separate EventBridge rule or IAM role needed.
-  # When fired, #{SourceVars.TagName} carries the pushed tag name.
+  # AWS handles the CodeConnections webhook → pipeline start internally.
+  # When fired, GIT_TAG pipeline variable is "" (V2 trigger cannot inject vars);
+  # ParseTag discovers the tag from git. For manual runs, caller supplies GIT_TAG.
   # NOTE: the EventBridge rule below is kept but DISABLED to prevent double-firing.
   trigger {
     provider_type = "CodeStarSourceConnection"
@@ -72,10 +83,6 @@ resource "aws_codepipeline" "this" {
       provider         = "CodeStarSourceConnection"
       version          = "1"
       output_artifacts = ["packages_source"]
-      # namespace exposes source action output variables as #{SourceVars.*}
-      # TagName carries the pushed tag name (e.g. pg14/postgresql-14-14.21-1).
-      # BranchName only reflects the configured branch (pg14), not the tag.
-      namespace        = "SourceVars"
 
       configuration = {
         ConnectionArn        = var.github_connection_arn
@@ -128,13 +135,13 @@ resource "aws_codepipeline" "this" {
         ProjectName   = var.codebuild_parse_tag_project
         PrimarySource = "platform_source"
         EnvironmentVariables = jsonencode([
-          # BRANCH_REF is set to the pushed tag name by the V2 trigger via
-          # #{SourceVars.TagName}. ParseTag uses this as the tag to parse.
-          # For manual re-runs via CLI, pass GIT_TAG directly to the CodeBuild
-          # project rather than via a pipeline variable.
+          # BRANCH_REF comes from the GIT_TAG pipeline variable.
+          # Auto-triggered (V2 trigger): GIT_TAG="" — ParseTag discovers the tag
+          # from packages_source via `git describe --tags --exact-match HEAD`.
+          # Manual run: caller provides GIT_TAG via --variables or the Console form.
           {
             name  = "BRANCH_REF"
-            value = "#{SourceVars.TagName}"
+            value = "#{variables.GIT_TAG}"
             type  = "PLAINTEXT"
           }
         ])
