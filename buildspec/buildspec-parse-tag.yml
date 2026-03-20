@@ -65,6 +65,8 @@ phases:
           fi
           echo "Discovered tag: $BRANCH_REF"
         fi
+        # Persist for step 1b — each `- |` block runs in a separate shell.
+        printf '%s' "$BRANCH_REF" > /tmp/branch_ref.txt
 
       # ── Step 1b: Parse the resolved tag ──────────────────────────────────
       # Format: pg{N}/{package-name}-{version}-{revision}[-rcN]
@@ -73,6 +75,7 @@ phases:
       #   pg14/postgresql-14-pgvector-0.7.4-1
       #   pg14/postgresql-14-14.22-1-rc1
       - |
+        BRANCH_REF=$(cat /tmp/branch_ref.txt)
         python3 - "$BRANCH_REF" <<'PYEOF'
         import sys, re, os
 
