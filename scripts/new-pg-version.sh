@@ -4,7 +4,7 @@
 #
 # Usage:
 #   new-pg-version.sh --new-major 18 --new-version 18.0 --source-major 17 \
-#                     --packages-dir ../mydbops-pg-packaging \
+#                     --packages-dir ../pg-packaging \
 #                     --eol-date 2030-11-12
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -157,7 +157,7 @@ echo ""
 echo "────────────────────────────────────────────────────────────────"
 echo "Post-creation checklist:"
 echo ""
-echo "  1. Update config/pg-versions.yml in mydbops-pg-platform:"
+echo "  1. Update config/pg-versions.yml in pg-platform:"
 echo "       Add pg${NEW_MAJOR} entry with eol_date: ${EOL_DATE:-TBD}"
 echo ""
 echo "  2. Verify patches still apply:"
@@ -171,7 +171,7 @@ echo "  4. Test builds before tagging:"
 echo "       ./scripts/build-package.sh \\"
 echo "         --package postgresql-${NEW_MAJOR} \\"
 echo "         --packages-dir ${PACKAGES_DIR} \\"
-echo "         --s3-bucket mydbops-cicd-artifacts-dev \\"
+echo "         --s3-bucket pg-platform-cicd-artifacts-dev \\"
 echo "         --env staging --os ubuntu --release 22 --arch amd64"
 echo ""
 echo "  5. Once tests pass, push the branch and configure pipeline"

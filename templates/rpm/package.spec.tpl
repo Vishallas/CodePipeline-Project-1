@@ -37,5 +37,5 @@ TODO: Add detailed package description.
 %{pgbaseinstdir}/share/extension/%{sname}*.control
 
 %changelog
-* {{CHANGELOG_DATE}} Mydbops <ops@mydbops.com> - {{VERSION}}-{{REVISION}}
+* {{CHANGELOG_DATE}} Pg-platform <ops@pg-platform.com> - {{VERSION}}-{{REVISION}}
 - Initial packaging of {{PACKAGE_NAME}} {{VERSION}}.

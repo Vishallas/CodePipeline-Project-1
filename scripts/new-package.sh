@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/new-package.sh — Scaffold a new package in mydbops-pg-packaging
+# scripts/new-package.sh — Scaffold a new package in pg-packaging
 #
 # Usage:
 #   new-package.sh --name postgresql-14-pgvector --version 0.7.4 --pg 14 \
-#                  --packages-dir ../mydbops-pg-packaging \
+#                  --packages-dir ../pg-packaging \
 #                  [--source-url URL] [--description TEXT] [--force]
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -54,8 +54,8 @@ if [[ -d "$PKG_DIR" && $FORCE -eq 0 ]]; then
 fi
 
 REVISION="1"
-AUTHOR_NAME="${GIT_AUTHOR_NAME:-Mydbops}"
-AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-ops@mydbops.com}"
+AUTHOR_NAME="${GIT_AUTHOR_NAME:-Pg-platform}"
+AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-ops@pg-platform.com}"
 DATE="$(date -R)"
 YEAR="$(date +%Y)"
 SHORT_NAME="${PACKAGE_NAME#postgresql-${PG_MAJOR}-}"
@@ -137,7 +137,7 @@ echo "  7. Test one target:"
 echo "       ./scripts/build-package.sh \\"
 echo "         --package ${PACKAGE_NAME} \\"
 echo "         --packages-dir ${PACKAGES_DIR} \\"
-echo "         --s3-bucket mydbops-cicd-artifacts-dev \\"
+echo "         --s3-bucket pg-platform-cicd-artifacts-dev \\"
 echo "         --env staging \\"
 echo "         --os ubuntu --release 22 --arch amd64"
 echo ""

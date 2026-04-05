@@ -11,22 +11,22 @@
 docker, git, aws cli, python3, curl
 
 # AWS setup (one-time, done by infra team)
-# - CodePipeline per PG major (mydbops-pkg-pg14, etc.)
+# - CodePipeline per PG major (pg-platform-pkg-pg14, etc.)
 # - CodeBuild projects with privileged_mode = true (Docker-in-Docker)
-# - ECR repo: mydbops/pg-build with build images pushed
+# - ECR repo: pg-platform/pg-build with build images pushed
 # - SSM Parameters:
-#     /mydbops/cicd/build/S3_BUCKET
-#     /mydbops/cicd/build/BUILD_ENV
-#     /mydbops/cicd/ecr/account_id
-#     /mydbops/cicd/ecr/region
+#     /pg-platform/cicd/build/S3_BUCKET
+#     /pg-platform/cicd/build/BUILD_ENV
+#     /pg-platform/cicd/ecr/account_id
+#     /pg-platform/cicd/ecr/region
 # - Secrets Manager:
-#     mydbops/cicd/gpg-signing-key  (base64 GPG private key)
-# - S3 buckets: mydbops-cicd-artifacts (staging + production paths)
+#     pg-platform/cicd/gpg-signing-key  (base64 GPG private key)
+# - S3 buckets: pg-platform-cicd-artifacts (staging + production paths)
 
 # Clone both repos side by side
-git clone github.com/mydbopsllp/mydbops-pg-platform.git
-git clone github.com/mydbopsllp/mydbops-pg-packaging.git
-cd mydbops-pg-platform
+git clone github.com/pg-platform/pg-platform.git
+git clone github.com/pg-platform/pg-packaging.git
+cd pg-platform
 ```
 
 ---
@@ -38,12 +38,12 @@ cd mydbops-pg-platform
   --name postgresql-14-pgvector \
   --version 0.7.4 \
   --pg 14 \
-  --packages-dir ../mydbops-pg-packaging \
+  --packages-dir ../pg-packaging \
   --source-url "https://github.com/pgvector/pgvector/archive/refs/tags/v0.7.4.tar.gz" \
   --description "Vector similarity search for PostgreSQL"
 ```
 
-This creates `mydbops-pg-packaging/packages/postgresql-14-pgvector/` with all required files.
+This creates `pg-packaging/packages/postgresql-14-pgvector/` with all required files.
 
 ---
 
@@ -79,7 +79,7 @@ Paste the hex value into `METADATA.yml` → `source_sha256`.
 ```bash
 ./scripts/lint.sh \
   --package postgresql-14-pgvector \
-  --packages-dir ../mydbops-pg-packaging
+  --packages-dir ../pg-packaging
 ```
 
 All `[FAIL]` items must be resolved. `[WARN]` items are acceptable.
@@ -91,15 +91,15 @@ All `[FAIL]` items must be resolved. `[WARN]` items are acceptable.
 ```bash
 ./scripts/build-package.sh \
   --package postgresql-14-pgvector \
-  --packages-dir ../mydbops-pg-packaging \
-  --s3-bucket mydbops-cicd-artifacts \
+  --packages-dir ../pg-packaging \
+  --s3-bucket pg-platform-cicd-artifacts \
   --env staging \
   --os ubuntu --release 22 --arch amd64
 ```
 
 On success, the `.deb` is uploaded to:
 ```
-s3://mydbops-cicd-artifacts/staging/packages/postgresql-14-pgvector/0.7.4-1/ubuntu-22-amd64/
+s3://pg-platform-cicd-artifacts/staging/packages/postgresql-14-pgvector/0.7.4-1/ubuntu-22-amd64/
 ```
 
 ---
@@ -127,7 +127,7 @@ Re-run lint to confirm everything still passes.
 ## 7. Push to Remote Packaging Repo
 
 ```bash
-cd ../mydbops-pg-packaging
+cd ../pg-packaging
 
 # Make sure you're on the correct pg branch
 git checkout pg14
@@ -168,10 +168,10 @@ Each job:
   ECR login → download tarball → Docker build → validate → GPG sign → S3 upload
 
 S3 staging path:
-  s3://mydbops-cicd-artifacts/staging/packages/postgresql-14-pgvector/0.7.4-1/{target}/
+  s3://pg-platform-cicd-artifacts/staging/packages/postgresql-14-pgvector/0.7.4-1/{target}/
 ```
 
-Monitor in AWS Console → **CodePipeline → mydbops-pkg-pg14**.
+Monitor in AWS Console → **CodePipeline → pg-platform-pkg-pg14**.
 
 ---
 
@@ -198,7 +198,7 @@ and upload them to S3. The staging APT/YUM repo is now installable.
 
 **Final S3 paths:**
 ```
-s3://mydbops-cicd-artifacts/production/packages/postgresql-14-pgvector/0.7.4-1/
+s3://pg-platform-cicd-artifacts/production/packages/postgresql-14-pgvector/0.7.4-1/
   ubuntu-22-amd64/postgresql-14-pgvector_0.7.4-1_amd64.deb
   ubuntu-22-amd64/postgresql-14-pgvector_0.7.4-1_amd64.deb.sha256
   epel-9-x86_64/postgresql-14-pgvector-0.7.4-1.x86_64.rpm
@@ -211,21 +211,21 @@ s3://mydbops-cicd-artifacts/production/packages/postgresql-14-pgvector/0.7.4-1/
 ## Version Bump Workflow (subsequent releases)
 
 ```bash
-cd mydbops-pg-platform
+cd pg-platform
 
 # 1. Bump version files atomically
 ./scripts/bump-version.sh \
   --package postgresql-14-pgvector \
   --version 0.8.0 \
   --change "Upgrade to pgvector 0.8.0" \
-  --packages-dir ../mydbops-pg-packaging
+  --packages-dir ../pg-packaging
 
 # 2. Fill the new SHA256
 curl -sL <new-tarball-url> | sha256sum
 # → paste into METADATA.yml source_sha256
 
 # 3. Commit, push, tag (same as steps 7–8)
-cd ../mydbops-pg-packaging
+cd ../pg-packaging
 git add packages/postgresql-14-pgvector/
 git commit -m "postgresql-14-pgvector: upgrade to 0.8.0"
 git push origin pg14

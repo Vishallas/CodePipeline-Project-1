@@ -22,7 +22,7 @@ pulp_check_configured() {
 # Fetches Pulp password from Secrets Manager into PULP_PASSWORD.
 pulp_get_password() {
     pulp_check_configured || return 0
-    local secret_name="${PULP_PASSWORD_SECRET:-mydbops/cicd/pulp-password}"
+    local secret_name="${PULP_PASSWORD_SECRET:-pg-platform/cicd/pulp-password}"
     PULP_PASSWORD=$(secrets_manager_get "$secret_name") || {
         log_warn "Could not fetch Pulp password from Secrets Manager"
         return 0

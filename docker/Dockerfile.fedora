@@ -9,7 +9,7 @@
 #     --build-arg FEDORA_VERSION=42 \
 #     --build-arg PG_VERSIONS="14 15 16 17" \
 #     -f docker/Dockerfile.fedora \
-#     -t mydbops/pg-build:fedora-42-x86_64 .
+#     -t pg-platform/pg-build:fedora-42-x86_64 .
 
 ARG FEDORA_VERSION=42
 FROM fedora:${FEDORA_VERSION}
@@ -121,6 +121,6 @@ ARG GIT_COMMIT=""
 
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.revision="${GIT_COMMIT}" \
-      org.opencontainers.image.source="https://github.com/mydbopsllp/mydbops-pg-platform" \
-      com.mydbops.pg-versions="${PG_VERSIONS}" \
-      com.mydbops.base-os="fedora-${FEDORA_VERSION}"
+      org.opencontainers.image.source="https://github.com/pg-platform/pg-platform" \
+      com.pg-platform.pg-versions="${PG_VERSIONS}" \
+      com.pg-platform.base-os="fedora-${FEDORA_VERSION}"

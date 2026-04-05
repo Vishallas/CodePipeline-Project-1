@@ -35,7 +35,7 @@ phases:
       # Auto-triggered (V2 trigger): GIT_TAG="" — discover the tag from git.
       # Manual run: caller provides GIT_TAG via --variables or the Console form:
       #   aws codepipeline start-pipeline-execution \
-      #     --name mydbops-pkg-pg14 \
+      #     --name pg-platform-pkg-pg14 \
       #     --variables name=GIT_TAG,value=pg14/postgresql-14-14.21-1
       - |
         # V2 native trigger cannot inject variable values; default is "auto".

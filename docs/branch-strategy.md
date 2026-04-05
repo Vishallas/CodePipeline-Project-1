@@ -4,12 +4,12 @@
 
 | Repo | Purpose | Branches |
 |------|---------|---------|
-| `mydbops-pg-platform` | Build infrastructure, scripts, buildspecs | `main` only |
-| `mydbops-pg-packaging` | Package definitions | `pg14`, `pg15`, `pg16`, `pg17`, `tools` |
+| `pg-platform` | Build infrastructure, scripts, buildspecs | `main` only |
+| `pg-packaging` | Package definitions | `pg14`, `pg15`, `pg16`, `pg17`, `tools` |
 
 ## One branch per PG major
 
-Each `pgN` branch in `mydbops-pg-packaging` contains package definitions for
+Each `pgN` branch in `pg-packaging` contains package definitions for
 that PostgreSQL major version. All packages on a branch are built against the
 same PG major version.
 
@@ -26,14 +26,14 @@ tools/  ← pgbouncer, pgbackrest, barman, etc. (PG-version-agnostic)
 Use `backport.sh` to cherry-pick a commit from one branch to another:
 
 ```bash
-cd mydbops-pg-platform
+cd pg-platform
 
 # Backport a bug fix from pg17 to pg16 and pg15
 ./scripts/backport.sh \
   --from pg17 \
   --to pg16 pg15 \
   --commit abc1234 \
-  --packages-dir ../mydbops-pg-packaging
+  --packages-dir ../pg-packaging
 ```
 
 If there are conflicts, the script stops and prints instructions for manual resolution.
@@ -45,7 +45,7 @@ If there are conflicts, the script stops and prints instructions for manual reso
   --from pg17 \
   --to pg16 pg15 \
   --commit abc1234 \
-  --packages-dir ../mydbops-pg-packaging \
+  --packages-dir ../pg-packaging \
   --dry-run
 ```
 
@@ -57,14 +57,14 @@ and resets the index on conflict.
 When PostgreSQL releases a new major version (e.g. 18):
 
 ```bash
-cd mydbops-pg-platform
+cd pg-platform
 
 ./scripts/new-pg-version.sh \
   --new-major 18 \
   --new-version 18.0 \
   --source-major 17 \
   --eol-date 2030-11-12 \
-  --packages-dir ../mydbops-pg-packaging
+  --packages-dir ../pg-packaging
 ```
 
 Then follow the printed checklist:
@@ -86,6 +86,6 @@ tools/pgbackrest-2.50.0-1
 
 ## Platform repo (main only)
 
-`mydbops-pg-platform` has a single `main` branch. All script and buildspec
+`pg-platform` has a single `main` branch. All script and buildspec
 changes go here. Changes take effect on the next pipeline run — there is no
 need to update packaging branches when platform scripts are updated.

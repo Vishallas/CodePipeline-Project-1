@@ -4,7 +4,7 @@
 #   major           — integer PG major version
 #   eol_date        — upstream community EOL date (YYYY-MM-DD)
 #   pipeline_enabled — false = no builds triggered, pipeline disabled
-#   branch          — branch name in mydbops-pg-packaging repo
+#   branch          — branch name in pg-packaging repo
 #   status          — stable | rc | eol
 
 pg_versions:

@@ -316,7 +316,7 @@ _register_chroot() {
   # Note: directory was cleaned and prepared at container startup
   sudo tee "$chroot_config" > /dev/null <<EOF
 [${CHROOT_NAME}]
-description=Mydbops build chroot – ${DIST}/${ARCH}
+description=Pg-platform build chroot – ${DIST}/${ARCH}
 type=file
 file=${CHROOT_TAR}
 groups=root,sbuild

@@ -33,7 +33,7 @@ generate_spec() {
 
     cat > "${SPEC_FILE}" << SPECEOF
 # PostgreSQL ${VER} RPM spec file
-# Based on mydbops packaging structure
+# Based on pg-platform packaging structure
 # Maintainable and operational version
 
 # Version information
@@ -92,7 +92,7 @@ generate_spec() {
 # Package information
 Name:           postgresql%{pgmajorversion}
 Version:        ${FULL_VER}
-Release:        ${RELEASE}mydbops%{?dist}
+Release:        ${RELEASE}pg-platform%{?dist}
 Summary:        PostgreSQL client programs and libraries
 
 License:        PostgreSQL
@@ -808,7 +808,7 @@ SPECEOF
 
     # Add changelog entry
     local TODAY=$(date +"%a %b %d %Y")
-    echo "* ${TODAY} PostgreSQL Packaging Team <packaging@example.com> - ${FULL_VER}-${RELEASE}mydbops" >> "${SPEC_FILE}"
+    echo "* ${TODAY} PostgreSQL Packaging Team <packaging@example.com> - ${FULL_VER}-${RELEASE}pg-platform" >> "${SPEC_FILE}"
     echo "- Initial package for PostgreSQL ${FULL_VER}" >> "${SPEC_FILE}"
 }
 

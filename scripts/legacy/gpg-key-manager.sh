@@ -660,7 +660,7 @@ Examples:
   gpg-key-manager.sh check-expiry
 
   # Generate a new 4096-bit RSA key expiring in 2 years
-  gpg-key-manager.sh generate --expiry 2y --email "ops@mydbops.com"
+  gpg-key-manager.sh generate --expiry 2y --email "ops@pg-platform.com"
 
   # Full rotation workflow
   gpg-key-manager.sh rotate --expiry 2y

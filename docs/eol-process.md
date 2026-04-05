@@ -25,11 +25,11 @@ Reference: https://www.postgresql.org/support/versioning/
 First, do a dry-run to see what will happen:
 
 ```bash
-cd mydbops-pg-platform
+cd pg-platform
 
 ./scripts/eol.sh \
   --pg-major 14 \
-  --packages-dir ../mydbops-pg-packaging
+  --packages-dir ../pg-packaging
 ```
 
 Review the output. When ready to apply:
@@ -37,14 +37,14 @@ Review the output. When ready to apply:
 ```bash
 ./scripts/eol.sh \
   --pg-major 14 \
-  --packages-dir ../mydbops-pg-packaging \
+  --packages-dir ../pg-packaging \
   --confirm
 ```
 
 The script:
 1. Sets `pipeline_enabled: false` for pg14 in `config/pg-versions.yml`
 2. Sets `status: eol` for pg14
-3. Disables all `build.yml` targets in `mydbops-pg-packaging/pg14`
+3. Disables all `build.yml` targets in `pg-packaging/pg14`
 4. Writes `ARCHIVED.md` to the pg14 branch
 5. Creates the `pg14/eol` git tag
 
@@ -52,7 +52,7 @@ The script:
 
 ### Infrastructure (Terraform)
 
-- Disable or delete the `mydbops-pkg-pg14` CodePipeline
+- Disable or delete the `pg-platform-pkg-pg14` CodePipeline
 - Review and update IAM policies if they reference pg14 explicitly
 - Update any CloudFront/CDN configurations
 

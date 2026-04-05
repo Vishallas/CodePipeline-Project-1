@@ -1,12 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# repo-updater module — CodeBuild project that regenerates APT/YUM repo metadata
-#
-# Used by Stage 5 (update staging metadata) and Stage 7 (promote to production).
-# The same project is called twice with different BUILD_ENV values.
-#
-# Buildspec: buildspec/buildspec-repo-updater.yml (read from platform_source artifact)
-# ─────────────────────────────────────────────────────────────────────────────
-
 variable "codebuild_role_arn" {
   type = string
 }
@@ -33,7 +24,7 @@ variable "tags" {
 }
 
 resource "aws_codebuild_project" "repo_updater" {
-  name          = "mydbops-repo-updater"
+  name          = "pg-platform-repo-updater"
   description   = "Regenerates APT (reprepro) and YUM (createrepo_c) repo metadata and syncs to S3"
   service_role  = var.codebuild_role_arn
   build_timeout = 20
@@ -71,7 +62,7 @@ resource "aws_codebuild_project" "repo_updater" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/mydbops-repo-updater"
+      group_name  = "/aws/codebuild/pg-platform-repo-updater"
       stream_name = ""
     }
   }

@@ -136,6 +136,6 @@ ARG GIT_COMMIT=""
 
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.revision="${GIT_COMMIT}" \
-      org.opencontainers.image.source="https://github.com/mydbopsllp/mydbops-pg-platform" \
-      com.mydbops.pg-versions="${PG_VERSIONS}" \
-      com.mydbops.base-os="almalinux-${EL_VERSION}"
+      org.opencontainers.image.source="https://github.com/pg-platform/pg-platform" \
+      com.pg-platform.pg-versions="${PG_VERSIONS}" \
+      com.pg-platform.base-os="almalinux-${EL_VERSION}"

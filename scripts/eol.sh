@@ -6,7 +6,7 @@
 # With --confirm: makes changes.
 #
 # Usage:
-#   eol.sh --pg-major 14 --packages-dir ../mydbops-pg-packaging [--confirm]
+#   eol.sh --pg-major 14 --packages-dir ../pg-packaging [--confirm]
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail

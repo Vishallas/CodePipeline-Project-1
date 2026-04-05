@@ -1,6 +1,6 @@
 version: 0.2
 # ─────────────────────────────────────────────────────────────────────────────
-# Mydbops CodeBuild Buildspec — RPM x86_64 → .rpm packages
+# Pg-platform CodeBuild Buildspec — RPM x86_64 → .rpm packages
 # Target: EPEL 8/9/10 + Fedora 42/43 on x86_64
 # Two script invocations: one for epel, one for fedora.
 # All build logic lives in build-package.sh — do not add logic here.
@@ -8,11 +8,11 @@ version: 0.2
 
 env:
   parameter-store:
-    S3_BUCKET:      /mydbops/cicd/build/S3_BUCKET
-    ECR_ACCOUNT_ID: /mydbops/cicd/ecr/account_id
-    ECR_REGION:     /mydbops/cicd/ecr/region
+    S3_BUCKET:      /pg-platform/cicd/build/S3_BUCKET
+    ECR_ACCOUNT_ID: /pg-platform/cicd/ecr/account_id
+    ECR_REGION:     /pg-platform/cicd/ecr/region
   secrets-manager:
-    GPG_PRIVATE_KEY: mydbops/cicd/gpg-signing-key-1
+    GPG_PRIVATE_KEY: pg-platform/cicd/gpg-signing-key-1
 
 phases:
   install:

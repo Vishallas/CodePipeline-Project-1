@@ -17,7 +17,7 @@ version: 0.2
 
 env:
   parameter-store:
-    CLOUDFRONT_DIST: /mydbops/cicd/cloudfront/distribution_id
+    CLOUDFRONT_DIST: /pg-platform/cicd/cloudfront/distribution_id
 
 phases:
   install:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/lint.sh — Validate package definitions in mydbops-pg-packaging
+# scripts/lint.sh — Validate package definitions in pg-packaging
 #
 # Usage:
 #   lint.sh --package NAME --packages-dir DIR [--strict]

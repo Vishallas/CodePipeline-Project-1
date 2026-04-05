@@ -199,7 +199,7 @@ PYEOF
         if [[ -n "$ECR_ACCOUNT_ID" && "$ECR_ACCOUNT_ID" != "null" ]]; then
             docker_image=$(ecr_image_uri "$ECR_ACCOUNT_ID" "$ECR_REGION" "$ECR_REPO" "$docker_tag")
         else
-            docker_image="mydbops/pg-build:${docker_tag}"
+            docker_image="pg-platform/pg-build:${docker_tag}"
         fi
 
         local target_work="${work_base}/${s3_label}"

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 REPO_URL="${1:?Repository URL required}"
-SUFFIX="${2:-mydbops1}"
+SUFFIX="${2:-pg-platform1}"
 NEW_NAME="${3:-MyDBOps Enterprise Build System}"
-NEW_EMAIL="${4:-build@mydbops.com}"
+NEW_EMAIL="${4:-build@pg-platform.com}"
 
 BUILD_ID="${CI_PIPELINE_ID:-$(date +%Y%m%d%H%M%S)}"
 GIT_COMMIT="unknown"

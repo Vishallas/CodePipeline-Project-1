@@ -227,7 +227,7 @@ build_package() {
 
     # ── Delegate to build environment abstraction if available ──
     if [ "$builder" != "docker" ] && [ -f "${SCRIPT_DIR}/build-envs/${builder}.sh" ]; then
-        log_build "PostgreSQL ${pg_major} (${pg_full}-${pg_release}mydbops) → ${distro_id} [${builder}]"
+        log_build "PostgreSQL ${pg_major} (${pg_full}-${pg_release}pg-platform) → ${distro_id} [${builder}]"
         echo ""
 
         _buildenv_build_rpm "postgresql-${pg_major}" "$distro_id" "$pg_major" "$pg_full" "$pg_release"
@@ -260,7 +260,7 @@ build_package() {
         return 1
     fi
 
-    log_build "PostgreSQL ${pg_major} (${pg_full}-${pg_release}mydbops) → ${distro_id} [docker]"
+    log_build "PostgreSQL ${pg_major} (${pg_full}-${pg_release}pg-platform) → ${distro_id} [docker]"
     echo ""
 
     mkdir -p "${out_dir}"/{RPMS,SRPMS}
@@ -422,7 +422,7 @@ cmd_status() {
         else
             status="${DIM}disabled${NC}"
         fi
-        printf "  %-8s %-12s %-10s " "$_PG_MAJOR" "$_PG_FULL" "${_PG_RELEASE}mydbops"
+        printf "  %-8s %-12s %-10s " "$_PG_MAJOR" "$_PG_FULL" "${_PG_RELEASE}pg-platform"
         echo -e "$status"
     done
     echo ""
@@ -838,13 +838,13 @@ cmd_tag() {
         parse_pg_version "$v_entry"
         [ "$_PG_ENABLED" != "1" ] && continue
 
-        local tag_name="v${_PG_FULL}-${_PG_RELEASE}mydbops"
+        local tag_name="v${_PG_FULL}-${_PG_RELEASE}pg-platform"
 
         if git -C "$REPO_ROOT" tag -l "$tag_name" | grep -q "$tag_name"; then
             log_warn "Tag already exists: ${tag_name}"
         else
             git -C "$REPO_ROOT" tag -a "$tag_name" \
-                -m "Release PostgreSQL ${_PG_FULL}-${_PG_RELEASE}mydbops"
+                -m "Release PostgreSQL ${_PG_FULL}-${_PG_RELEASE}pg-platform"
             log_success "Created tag: ${tag_name}"
         fi
     done

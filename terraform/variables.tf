@@ -1,7 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Root variables — set these in terraform.tfvars or via environment variables
-# ─────────────────────────────────────────────────────────────────────────────
-
 variable "aws_region" {
   description = "AWS region for all resources"
   type        = string
@@ -13,58 +9,46 @@ variable "aws_account_id" {
   type        = string
 }
 
-# ── GitHub / CodeStar ──────────────────────────────────────────────────────
-
 variable "github_connection_arn" {
-  description = <<-EOT
-    ARN of the CodeStar Connections connection to GitHub.
-    Create via: aws codestar-connections create-connection --provider-type GitHub
-    Then complete the OAuth handshake in AWS Console → Developer Tools → Connections.
-  EOT
-  type = string
+  description = "ARN of the CodeStar Connections connection to GitHub"
+  type        = string
 }
 
 variable "packaging_repo" {
-  description = "GitHub full repo ID for mydbops-pg-packaging (org/repo)"
+  description = "GitHub full repo ID for pg-packaging (org/repo)"
   type        = string
-  default     = "mydbopsllp/mydbops-pg-packaging"
+  default     = "pg-platform/pg-packaging"
 }
 
 variable "platform_repo" {
-  description = "GitHub full repo ID for mydbops-pg-platform (org/repo)"
+  description = "GitHub full repo ID for pg-platform (org/repo)"
   type        = string
-  default     = "mydbopsllp/mydbops-pg-platform"
+  default     = "pg-platform/pg-platform"
 }
 
-# ── S3 ────────────────────────────────────────────────────────────────────
-
 variable "artifacts_bucket_name" {
-  description = "S3 bucket for build artifacts (packages, SHA256 sidecars)"
+  description = "S3 bucket for build artifacts"
   type        = string
-  default     = "mydbops-cicd-artifacts"
+  default     = "pg-platform-cicd-artifacts"
 }
 
 variable "apt_bucket_name" {
-  description = "S3 bucket serving the APT (Debian/Ubuntu) repository"
+  description = "S3 bucket serving the APT repository"
   type        = string
-  default     = "mydbops-apt-repo"
+  default     = "pg-platform-apt-repo"
 }
 
 variable "yum_bucket_name" {
-  description = "S3 bucket serving the YUM (EPEL/Fedora) repository"
+  description = "S3 bucket serving the YUM repository"
   type        = string
-  default     = "mydbops-yum-repo"
+  default     = "pg-platform-yum-repo"
 }
-
-# ── ECR ───────────────────────────────────────────────────────────────────
 
 variable "ecr_repository_name" {
   description = "ECR repository name for Docker build images"
   type        = string
-  default     = "mydbops/pg-build"
+  default     = "pg-platform/pg-build"
 }
-
-# ── GPG signing ───────────────────────────────────────────────────────────
 
 variable "gpg_key_id" {
   description = "GPG key ID (fingerprint) used for package signing"
@@ -73,20 +57,14 @@ variable "gpg_key_id" {
 }
 
 variable "gpg_private_key_b64" {
-  description = <<-EOT
-    Base64-encoded GPG private key for package signing.
-    Generate: gpg --export-secret-keys --armor YOUR_KEY_ID | base64 -w0
-    This is stored in Secrets Manager — provide it once at setup, then rotate via Console.
-  EOT
-  type      = string
-  default   = ""
-  sensitive = true
+  description = "Base64-encoded GPG private key. Stored in Secrets Manager."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
-# ── Pulp (optional) ───────────────────────────────────────────────────────
-
 variable "pulp_url" {
-  description = "Pulp server URL. Leave empty to disable Pulp integration."
+  description = "Pulp server URL. Leave empty to disable."
   type        = string
   default     = ""
 }
@@ -98,28 +76,20 @@ variable "pulp_password" {
   sensitive   = true
 }
 
-# ── CloudFront ────────────────────────────────────────────────────────────
-
 variable "cloudfront_distribution_id" {
-  description = "CloudFront distribution ID for APT/YUM repo CDN invalidation. Leave empty to skip invalidation."
+  description = "CloudFront distribution ID for CDN invalidation. Leave empty to skip."
   type        = string
   default     = ""
 }
 
-# ── Pipeline ──────────────────────────────────────────────────────────────
-
 variable "pg_versions" {
-  description = <<-EOT
-    List of active PostgreSQL major versions to create pipelines for.
-    Each entry creates one CodePipeline + one EventBridge rule.
-    Remove a version to disable its pipeline (use eol.sh first).
-  EOT
-  type    = list(string)
-  default = ["14", "15", "16", "17"]
+  description = "PostgreSQL major versions to create pipelines for"
+  type        = list(string)
+  default     = ["14", "15", "16", "17"]
 }
 
 variable "build_env" {
-  description = "Default build environment tag written to SSM (staging or production)"
+  description = "Default build environment (staging or production)"
   type        = string
   default     = "staging"
 }
@@ -137,10 +107,10 @@ variable "codebuild_image" {
 }
 
 variable "tags" {
-  description = "Tags to apply to all resources"
+  description = "Tags applied to all resources"
   type        = map(string)
   default = {
-    Project   = "mydbops-pg-packaging"
+    Project   = "pg-platform-packaging"
     ManagedBy = "terraform"
   }
 }

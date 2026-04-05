@@ -15,7 +15,7 @@ _MYDBOPS_DEB_LOADED=1
 #   work_dir/src/debian/   ← packaging from debian/main/debian/
 #                            + overlay from debian/{codename}/  (if present)
 #
-# packaging_dir: the package's directory in mydbops-pg-packaging, e.g.
+# packaging_dir: the package's directory in pg-packaging, e.g.
 #   .../packages/postgresql-14
 assemble_deb_structure() {
     local tarball="$1"

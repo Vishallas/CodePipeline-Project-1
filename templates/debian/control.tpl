@@ -1,7 +1,7 @@
 Source: {{PACKAGE_NAME}}
 Section: database
 Priority: optional
-Maintainer: Mydbops <ops@mydbops.com>
+Maintainer: Pg-platform <ops@pg-platform.com>
 Build-Depends:
  debhelper-compat (= 13),
  postgresql-server-dev-{{PG_MAJOR}},

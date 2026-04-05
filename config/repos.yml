@@ -4,25 +4,25 @@
 
 s3:
   # Bucket for build artifacts (packages, sha256 sidecars)
-  artifacts_bucket: mydbops-cicd-artifacts
+  artifacts_bucket: pg-platform-cicd-artifacts
   # Bucket serving the APT repository (can be same as artifacts_bucket)
-  apt_bucket: mydbops-cicd-artifacts
+  apt_bucket: pg-platform-cicd-artifacts
   # Bucket serving the YUM repository
-  yum_bucket: mydbops-cicd-artifacts
+  yum_bucket: pg-platform-cicd-artifacts
 
 ecr:
-  account_id: ""          # Set via SSM /mydbops/cicd/ecr/account_id
+  account_id: ""          # Set via SSM /pg-platform/cicd/ecr/account_id
   region: ap-south-1
-  repository: mydbops/pg-build
+  repository: pg-platform/pg-build
 
 pulp:
   # Leave url empty to disable Pulp integration entirely
   url: ""
-  password_secret: mydbops/cicd/pulp-password
+  password_secret: pg-platform/cicd/pulp-password
 
 gpg:
-  key_id: ""              # Set via SSM /mydbops/cicd/gpg/key_id
-  key_secret: mydbops/cicd/gpg-signing-key   # Secrets Manager secret name
+  key_id: ""              # Set via SSM /pg-platform/cicd/gpg/key_id
+  key_secret: pg-platform/cicd/gpg-signing-key   # Secrets Manager secret name
 
 cloudfront:
-  distribution_id: ""     # Set via SSM /mydbops/cicd/cloudfront/distribution_id
+  distribution_id: ""     # Set via SSM /pg-platform/cicd/cloudfront/distribution_id

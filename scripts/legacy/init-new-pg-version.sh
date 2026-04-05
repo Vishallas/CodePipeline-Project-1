@@ -174,7 +174,7 @@ if [ -f "$SRC_SPEC" ]; then
 
     # Update version string
     sed -i "s/^Version:        .*/Version:        ${FULL_VER}/" "$NEW_SPEC"
-    sed -i "s/^Release:        .*/Release:        1mydbops%{?dist}/" "$NEW_SPEC"
+    sed -i "s/^Release:        .*/Release:        1pg-platform%{?dist}/" "$NEW_SPEC"
 
     # Update description references
     sed -i "s/PostgreSQL ${SRC_VER}/PostgreSQL ${NEW_VER}/g" "$NEW_SPEC"
@@ -184,7 +184,7 @@ if [ -f "$SRC_SPEC" ]; then
     # Update changelog
     TODAY=$(date +"%a %b %d %Y")
     cat >> "$NEW_SPEC" <<EOF
-* ${TODAY} PostgreSQL RPM Packaging <packaging@mydbops.com> - ${FULL_VER}-1mydbops
+* ${TODAY} PostgreSQL RPM Packaging <packaging@pg-platform.com> - ${FULL_VER}-1pg-platform
 - Initial package for PostgreSQL ${FULL_VER}
 EOF
 
@@ -415,7 +415,7 @@ cat > "${GLOBAL_MK}" <<EOF
 # packaging                     #
 # PostgreSQL RPM Repository     #
 #                               #
-# Based on mydbops pgrpms          #
+# Based on pg-platform pgrpms          #
 #################################
 #                               #
 #                               #

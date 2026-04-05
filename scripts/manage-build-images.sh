@@ -27,7 +27,7 @@
 #   --pg-versions LIST  Space-separated PG majors to embed (default: "14 15 16 17")
 #   --account ID        AWS account ID (or set ECR_ACCOUNT_ID env)
 #   --region  REGION    AWS region    (or set ECR_REGION env)
-#   --repo    REPO      ECR repo name (default: mydbops/pg-build)
+#   --repo    REPO      ECR repo name (default: pg-platform/pg-build)
 #   --no-cache          Pass --no-cache to docker buildx build (force full rebuild)
 #   --dry-run           Print commands without executing
 #
@@ -40,7 +40,7 @@
 #   The 'setup-builder' command:
 #     1. Installs QEMU binfmt_misc handlers for all architectures
 #        (uses tonistiigi/binfmt — the standard Docker multi-arch tool)
-#     2. Creates a named buildx builder 'mydbops-builder' using the
+#     2. Creates a named buildx builder 'pg-platform-builder' using the
 #        docker-container driver, which unlike the default 'docker' driver
 #        supports --load for cross-arch single-platform images
 #
@@ -63,14 +63,14 @@ DOCKER_DIR="${PLATFORM_DIR}/docker"
 
 ECR_ACCOUNT_ID="${ECR_ACCOUNT_ID:-$(yaml_get "$REPOS_YML" 'ecr.account_id' 2>/dev/null || true)}"
 ECR_REGION="${ECR_REGION:-$(yaml_get "$REPOS_YML" 'ecr.region' 2>/dev/null || echo 'us-east-1')}"
-ECR_REPO="${ECR_REPO:-$(yaml_get "$REPOS_YML" 'ecr.repository' 2>/dev/null || echo 'mydbops/pg-build')}"
+ECR_REPO="${ECR_REPO:-$(yaml_get "$REPOS_YML" 'ecr.repository' 2>/dev/null || echo 'pg-platform/pg-build')}"
 PG_VERSIONS="${PG_VERSIONS:-14 15 16 17}"
 
 CMD=""
 TARGET=""
 DRY_RUN=0
 NO_CACHE=0
-BUILDX_BUILDER="mydbops-builder"
+BUILDX_BUILDER="pg-platform-builder"
 
 # ─── Image manifest ───────────────────────────────────────────────────────────
 #
@@ -413,7 +413,7 @@ cmd_inspect() {
 
     # ── Labels (from local docker inspect if present, else ECR config) ─────
     echo ""
-    echo "=== OCI + mydbops labels ==="
+    echo "=== OCI + pg-platform labels ==="
     if docker image inspect "${ECR_REPO}:${tag}" &>/dev/null; then
         docker image inspect "${ECR_REPO}:${tag}" \
             | jq -r '.[0].Config.Labels // {} | to_entries[] | "  \(.key) = \(.value)"'

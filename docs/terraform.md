@@ -1,6 +1,6 @@
 # Terraform — Pipeline Infrastructure
 
-All AWS resources for the mydbops PostgreSQL packaging pipeline are managed by
+All AWS resources for the pg-platform PostgreSQL packaging pipeline are managed by
 Terraform. Run `terraform apply` once to create everything; subsequent runs only
 update what has changed.
 
@@ -11,7 +11,7 @@ update what has changed.
 | Resource | Count |
 |----------|-------|
 | S3 buckets (artifacts, apt-repo, yum-repo) | 3 |
-| ECR repository (`mydbops/pg-build`) | 1 |
+| ECR repository (`pg-platform/pg-build`) | 1 |
 | IAM roles (CodePipeline, CodeBuild, EventBridge) | 3 |
 | SSM parameters (6 static + 6 dynamic placeholders) | 12 |
 | Secrets Manager secrets (GPG key, optionally Pulp) | 1–2 |
@@ -58,12 +58,12 @@ terraform/
 ```bash
 aws codestar-connections create-connection \
   --provider-type GitHub \
-  --connection-name Mydbopsllp \
+  --connection-name Pg-platformllp \
   --region ap-south-1
 
 # Get the connection ARN
 aws codestar-connections list-connections \
-  --query 'Connections[?ConnectionName==`Mydbopsllp`].ConnectionArn' \
+  --query 'Connections[?ConnectionName==`Pg-platformllp`].ConnectionArn' \
   --output text
 ```
 
@@ -93,7 +93,7 @@ gpg --export-secret-keys --armor ABCDEF1234567890 | base64 -w0 > /tmp/gpg_b64.tx
 ### Step 3 — Configure variables
 
 ```bash
-cd mydbops-pg-platform/terraform
+cd pg-platform/terraform
 cp terraform.tfvars.example terraform.tfvars
 ```
 
@@ -105,12 +105,12 @@ aws_account_id = "123456789012"
 
 github_connection_arn = "arn:aws:codestar-connections:ap-south-1:123456789012:connection/..."
 
-packaging_repo = "mydbopsllp/mydbops-pg-packaging"
-platform_repo  = "mydbopsllp/mydbops-pg-platform"
+packaging_repo = "pg-platform/pg-packaging"
+platform_repo  = "pg-platform/pg-platform"
 
-artifacts_bucket_name = "mydbops-cicd-artifacts"
-apt_bucket_name       = "mydbops-apt-repo"
-yum_bucket_name       = "mydbops-yum-repo"
+artifacts_bucket_name = "pg-platform-cicd-artifacts"
+apt_bucket_name       = "pg-platform-apt-repo"
+yum_bucket_name       = "pg-platform-yum-repo"
 
 gpg_key_id = "ABCDEF1234567890"
 
@@ -128,7 +128,7 @@ export TF_VAR_gpg_private_key_b64="$(cat /tmp/gpg_b64.txt)"
 ### Step 4 — Apply
 
 ```bash
-cd mydbops-pg-platform/terraform
+cd pg-platform/terraform
 
 terraform init
 terraform plan    # review what will be created
@@ -141,10 +141,10 @@ Plan: 47 to add, 0 to change, 0 to destroy.
 Apply complete! Resources: 47 added, 0 changed, 0 destroyed.
 
 Outputs:
-  artifacts_bucket     = "mydbops-cicd-artifacts"
-  ecr_repository_url   = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/mydbops/pg-build"
+  artifacts_bucket     = "pg-platform-cicd-artifacts"
+  ecr_repository_url   = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/pg-platform/pg-build"
   pipeline_arns        = {
-    "14" = "arn:aws:codepipeline:ap-south-1:123456789012:mydbops-pkg-pg14"
+    "14" = "arn:aws:codepipeline:ap-south-1:123456789012:pg-platform-pkg-pg14"
     ...
   }
 ```
@@ -157,7 +157,7 @@ Terraform creates the secret with a placeholder. Upload the real key:
 
 ```bash
 aws secretsmanager put-secret-value \
-  --secret-id mydbops/cicd/gpg-signing-key \
+  --secret-id pg-platform/cicd/gpg-signing-key \
   --secret-string "$(cat /tmp/gpg_b64.txt)"
 
 rm /tmp/gpg_b64.txt   # clean up
@@ -173,7 +173,7 @@ Terraform creates the ECR repo but not the images. Build them:
 export ECR_ACCOUNT_ID=123456789012
 export ECR_REGION=ap-south-1
 
-cd mydbops-pg-platform
+cd pg-platform
 ./scripts/manage-build-images.sh build
 ./scripts/manage-build-images.sh push
 ```
@@ -186,12 +186,12 @@ See `docs/build-images.md` for details and the list of 12 images.
 
 ```bash
 # Trigger with an RC tag (skips approval gate)
-cd ../mydbops-pg-packaging
+cd ../pg-packaging
 git checkout pg14
 git tag pg14/postgresql-14-14.21-1-rc1
 git push origin pg14/postgresql-14-14.21-1-rc1
 
-# Watch in Console: CodePipeline → mydbops-pkg-pg14
+# Watch in Console: CodePipeline → pg-platform-pkg-pg14
 ```
 
 ---
@@ -216,7 +216,7 @@ Change the variable in `terraform.tfvars` and `terraform apply`. Example:
 
 ```hcl
 # Change artifact bucket
-artifacts_bucket_name = "mydbops-cicd-artifacts-v2"
+artifacts_bucket_name = "pg-platform-cicd-artifacts-v2"
 ```
 
 ### Rotate GPG key
@@ -226,10 +226,10 @@ The GPG key is in Secrets Manager — rotate via Console or CLI without touching
 ```bash
 gpg --export-secret-keys --armor NEW_KEY_ID | base64 -w0 | \
   xargs -I{} aws secretsmanager put-secret-value \
-    --secret-id mydbops/cicd/gpg-signing-key \
+    --secret-id pg-platform/cicd/gpg-signing-key \
     --secret-string {}
 
-aws ssm put-parameter --name /mydbops/cicd/gpg/key_id \
+aws ssm put-parameter --name /pg-platform/cicd/gpg/key_id \
   --value "NEW_KEY_ID" --type String --overwrite
 ```
 
@@ -238,9 +238,9 @@ aws ssm put-parameter --name /mydbops/cicd/gpg/key_id \
 Set the EventBridge rule to DISABLED without destroying the pipeline:
 
 ```bash
-aws events disable-rule --name mydbops-trigger-pg14
+aws events disable-rule --name pg-platform-trigger-pg14
 # Re-enable:
-aws events enable-rule --name mydbops-trigger-pg14
+aws events enable-rule --name pg-platform-trigger-pg14
 ```
 
 Or set `pipeline_enabled: false` in `config/pg-versions.yml` and remove the
@@ -254,10 +254,10 @@ Uncomment the `backend "s3"` block in `terraform/main.tf` and create the bucket
 and DynamoDB table first:
 
 ```bash
-aws s3 mb s3://mydbops-terraform-state --region ap-south-1
+aws s3 mb s3://pg-platform-terraform-state --region ap-south-1
 
 aws dynamodb create-table \
-  --table-name mydbops-terraform-lock \
+  --table-name pg-platform-terraform-lock \
   --attribute-definitions AttributeName=LockID,AttributeType=S \
   --key-schema AttributeName=LockID,KeyType=HASH \
   --billing-mode PAY_PER_REQUEST \
@@ -277,7 +277,7 @@ terraform init   # migrates local state to S3
 | GitHub CodeStar Connection OAuth | AWS Console (one-time OAuth handshake) |
 | GPG key content in Secrets Manager | `aws secretsmanager put-secret-value` |
 | Pulp server | External — configure `pulp_url` + `pulp_password` variables |
-| Package definitions (METADATA.yml, build.yml, spec) | `mydbops-pg-packaging` repo |
+| Package definitions (METADATA.yml, build.yml, spec) | `pg-packaging` repo |
 
 ---
 
@@ -288,5 +288,5 @@ terraform init   # migrates local state to S3
 | `terraform apply` fails — connection not found | Check `github_connection_arn` is correct and connection is `AVAILABLE` |
 | `Error: S3 bucket already exists` | Bucket names must be globally unique; change `*_bucket_name` variables |
 | Pipeline created but EventBridge never fires | Verify CodeStar connection is `AVAILABLE`; check EventBridge rule state |
-| `Error: InvalidParameterException` on SSM | Parameter already exists with different type; import it: `terraform import aws_ssm_parameter.s3_bucket /mydbops/cicd/build/S3_BUCKET` |
+| `Error: InvalidParameterException` on SSM | Parameter already exists with different type; import it: `terraform import aws_ssm_parameter.s3_bucket /pg-platform/cicd/build/S3_BUCKET` |
 | Build fails: ECR image not found | Docker images not pushed yet; run `manage-build-images.sh push` |

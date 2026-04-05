@@ -1,16 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# mydbops-pg-platform — Root Terraform module
-#
-# Creates all shared infrastructure once, then instantiates one pg-pipeline
-# module per active PG major version.
-#
-# Usage:
-#   cp terraform.tfvars.example terraform.tfvars
-#   # fill in terraform.tfvars
-#   terraform init
-#   terraform apply
-# ─────────────────────────────────────────────────────────────────────────────
-
 terraform {
   required_version = ">= 1.6"
 
@@ -21,12 +8,11 @@ terraform {
     }
   }
 
-  # Recommended: store state in S3 + DynamoDB lock
   # backend "s3" {
-  #   bucket         = "mydbops-terraform-state"
+  #   bucket         = "pg-platform-terraform-state"
   #   key            = "pg-packaging/terraform.tfstate"
   #   region         = "ap-south-1"
-  #   dynamodb_table = "mydbops-terraform-lock"
+  #   dynamodb_table = "pg-platform-terraform-lock"
   #   encrypt        = true
   # }
 }
@@ -35,20 +21,11 @@ provider "aws" {
   region = var.aws_region
 }
 
-# ── Local helpers ─────────────────────────────────────────────────────────────
-
 locals {
-  codepipeline_role_name = "mydbops-postgresql-packaging-codepipeline-role"
-  codebuild_role_name    = "mydbops-postgresql-packaging-codebuild-role"
-  eventbridge_role_name  = "mydbops-postgresql-packaging-eventbridge-role"
-  cloudfront_param = var.cloudfront_distribution_id == null ? {} : {
-    cloudfront = var.cloudfront_distribution_id
-  }
+  codepipeline_role_name = "pg-platform-codepipeline-role"
+  codebuild_role_name    = "pg-platform-codebuild-role"
+  eventbridge_role_name  = "pg-platform-eventbridge-role"
 }
-
-# ─────────────────────────────────────────────────────────────────────────────
-# S3 Buckets
-# ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_s3_bucket" "artifacts" {
   bucket = var.artifacts_bucket_name
@@ -94,10 +71,6 @@ resource "aws_s3_bucket_public_access_block" "yum_repo" {
   restrict_public_buckets = true
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ECR Repository
-# ─────────────────────────────────────────────────────────────────────────────
-
 resource "aws_ecr_repository" "pg_build" {
   name                 = var.ecr_repository_name
   image_tag_mutability = "MUTABLE"
@@ -114,7 +87,7 @@ resource "aws_ecr_lifecycle_policy" "pg_build" {
   policy = jsonencode({
     rules = [{
       rulePriority = 1
-      description  = "Keep last 10 images per tag prefix"
+      description  = "Keep last 30 images"
       selection = {
         tagStatus   = "any"
         countType   = "imageCountMoreThan"
@@ -124,12 +97,6 @@ resource "aws_ecr_lifecycle_policy" "pg_build" {
     }]
   })
 }
-
-# ─────────────────────────────────────────────────────────────────────────────
-# IAM Roles
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ── CodePipeline role ─────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "codepipeline" {
   name = local.codepipeline_role_name
@@ -146,16 +113,16 @@ resource "aws_iam_role" "codepipeline" {
 }
 
 resource "aws_iam_role_policy" "codepipeline" {
-  name = "mydbops-postgresql-packaging-codepipeline-policy"
+  name = "pg-platform-codepipeline-policy"
   role = aws_iam_role.codepipeline.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "CodeBuildAccess"
-        Effect = "Allow"
-        Action = ["codebuild:StartBuild", "codebuild:BatchGetBuilds"]
+        Sid      = "CodeBuildAccess"
+        Effect   = "Allow"
+        Action   = ["codebuild:StartBuild", "codebuild:BatchGetBuilds"]
         Resource = "*"
       },
       {
@@ -168,10 +135,10 @@ resource "aws_iam_role_policy" "codepipeline" {
         ]
       },
       {
-        Sid    = "ReadSSM"
-        Effect = "Allow"
-        Action = ["ssm:GetParameter", "ssm:GetParameters"]
-        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/mydbops/cicd/*"
+        Sid      = "ReadSSM"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/pg-platform/cicd/*"
       },
       {
         Sid      = "GitHubConnection"
@@ -182,8 +149,6 @@ resource "aws_iam_role_policy" "codepipeline" {
     ]
   })
 }
-
-# ── CodeBuild role ────────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "codebuild" {
   name = local.codebuild_role_name
@@ -200,7 +165,7 @@ resource "aws_iam_role" "codebuild" {
 }
 
 resource "aws_iam_role_policy" "codebuild" {
-  name = "mydbops-postgresql-packaging-codebuild-policy"
+  name = "pg-platform-codebuild-policy"
   role = aws_iam_role.codebuild.id
 
   policy = jsonencode({
@@ -238,8 +203,6 @@ resource "aws_iam_role_policy" "codebuild" {
         Resource = "*"
       },
       {
-        # Required for CODEBUILD_CLONE_REF: CodeBuild authenticates with GitHub
-        # via the connection when running `git fetch --tags` inside the build.
         Sid    = "GitHubCloneRef"
         Effect = "Allow"
         Action = [
@@ -249,29 +212,28 @@ resource "aws_iam_role_policy" "codebuild" {
         Resource = var.github_connection_arn
       },
       {
-        Sid    = "SSMRead"
-        Effect = "Allow"
-        Action = ["ssm:GetParameter", "ssm:GetParameters"]
-        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/mydbops/cicd/*"
+        Sid      = "SSMRead"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/pg-platform/cicd/*"
       },
       {
-        # Only ParseTag project needs PutParameter — same role for simplicity
-        Sid    = "SSMWrite"
-        Effect = "Allow"
-        Action = ["ssm:PutParameter"]
-        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/mydbops/cicd/build/*"
+        Sid      = "SSMWrite"
+        Effect   = "Allow"
+        Action   = ["ssm:PutParameter"]
+        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/pg-platform/cicd/build/*"
       },
       {
         Sid      = "Secrets"
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:mydbops/cicd/*"
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:pg-platform/cicd/*"
       },
       {
         Sid    = "Logs"
         Effect = "Allow"
         Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:/aws/codebuild/mydbops-*"
+        Resource = "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:/aws/codebuild/pg-platform-*"
       },
       {
         Sid      = "CloudFrontInvalidation"
@@ -284,8 +246,6 @@ resource "aws_iam_role_policy" "codebuild" {
     ]
   })
 }
-
-# ── EventBridge role ──────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "eventbridge" {
   name = local.eventbridge_role_name
@@ -302,7 +262,7 @@ resource "aws_iam_role" "eventbridge" {
 }
 
 resource "aws_iam_role_policy" "eventbridge" {
-  name = "mydbops-postgresql-packaging-eventbridge-policy"
+  name = "pg-platform-eventbridge-policy"
   role = aws_iam_role.eventbridge.id
 
   policy = jsonencode({
@@ -310,68 +270,45 @@ resource "aws_iam_role_policy" "eventbridge" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["codepipeline:StartPipelineExecution"]
-      Resource = "arn:aws:codepipeline:${var.aws_region}:${var.aws_account_id}:mydbops-pkg-pg*"
+      Resource = "arn:aws:codepipeline:${var.aws_region}:${var.aws_account_id}:pg-platform-pkg-pg*"
     }]
   })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SSM Parameters — static, set once
-# ─────────────────────────────────────────────────────────────────────────────
-
 resource "aws_ssm_parameter" "s3_bucket" {
-  name  = "/mydbops/cicd/build/S3_BUCKET"
+  name  = "/pg-platform/cicd/build/S3_BUCKET"
   type  = "String"
   value = var.artifacts_bucket_name
   tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "build_env" {
-  name  = "/mydbops/cicd/build/BUILD_ENV"
+  name  = "/pg-platform/cicd/build/BUILD_ENV"
   type  = "String"
   value = var.build_env
   tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "ecr_account_id" {
-  name  = "/mydbops/cicd/ecr/account_id"
+  name  = "/pg-platform/cicd/ecr/account_id"
   type  = "String"
   value = var.aws_account_id
   tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "ecr_region" {
-  name  = "/mydbops/cicd/ecr/region"
+  name  = "/pg-platform/cicd/ecr/region"
   type  = "String"
   value = var.aws_region
   tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "gpg_key_id" {
-  name  = "/mydbops/cicd/gpg/key_id"
+  name  = "/pg-platform/cicd/gpg/key_id"
   type  = "String"
   value = var.gpg_key_id
   tags  = var.tags
 }
-
-# resource "aws_ssm_parameter" "cloudfront_distribution_id" {
-#   count = var.cloudfront_distribution_id != null ? 1 : 0 
-#   name  = "/mydbops/cicd/cloudfront/distribution_id"
-#   type  = "String"
-#   value = var.cloudfront_distribution_id
-#   tags  = var.tags
-# }
-
-# resource "aws_ssm_parameter" "cloudfront_distribution_id" {
-#   for_each = local.cloudfront_param
-
-#   name  = "/mydbops/cicd/cloudfront/distribution_id"
-#   type  = "String"
-#   value = each.value
-
-#   tags = var.tags
-# }
-
 
 resource "aws_ssm_parameter" "cloudfront_distribution_id" {
   count = (
@@ -379,18 +316,15 @@ resource "aws_ssm_parameter" "cloudfront_distribution_id" {
     var.cloudfront_distribution_id != ""
   ) ? 1 : 0
 
-  name      = "/mydbops/cicd/cloudfront/distribution_id"
+  name      = "/pg-platform/cicd/cloudfront/distribution_id"
   type      = "String"
   value     = var.cloudfront_distribution_id
   overwrite = true
-
-  tags = var.tags
+  tags      = var.tags
 }
 
-# Placeholder parameters for dynamic vars written by ParseTag at runtime.
-# These are overwritten on every pipeline run — initial value is a placeholder.
 resource "aws_ssm_parameter" "package_name" {
-  name      = "/mydbops/cicd/build/PACKAGE_NAME"
+  name      = "/pg-platform/cicd/build/PACKAGE_NAME"
   type      = "String"
   value     = "placeholder"
   overwrite = true
@@ -400,7 +334,7 @@ resource "aws_ssm_parameter" "package_name" {
 }
 
 resource "aws_ssm_parameter" "package_version" {
-  name      = "/mydbops/cicd/build/PACKAGE_VERSION"
+  name      = "/pg-platform/cicd/build/PACKAGE_VERSION"
   type      = "String"
   value     = "placeholder"
   overwrite = true
@@ -410,7 +344,7 @@ resource "aws_ssm_parameter" "package_version" {
 }
 
 resource "aws_ssm_parameter" "package_revision" {
-  name      = "/mydbops/cicd/build/PACKAGE_REVISION"
+  name      = "/pg-platform/cicd/build/PACKAGE_REVISION"
   type      = "String"
   value     = "placeholder"
   overwrite = true
@@ -420,7 +354,7 @@ resource "aws_ssm_parameter" "package_revision" {
 }
 
 resource "aws_ssm_parameter" "pg_major" {
-  name      = "/mydbops/cicd/build/PG_MAJOR"
+  name      = "/pg-platform/cicd/build/PG_MAJOR"
   type      = "String"
   value     = "placeholder"
   overwrite = true
@@ -430,7 +364,7 @@ resource "aws_ssm_parameter" "pg_major" {
 }
 
 resource "aws_ssm_parameter" "git_tag" {
-  name      = "/mydbops/cicd/build/GIT_TAG"
+  name      = "/pg-platform/cicd/build/GIT_TAG"
   type      = "String"
   value     = "placeholder"
   overwrite = true
@@ -440,7 +374,7 @@ resource "aws_ssm_parameter" "git_tag" {
 }
 
 resource "aws_ssm_parameter" "is_rc" {
-  name      = "/mydbops/cicd/build/IS_RC"
+  name      = "/pg-platform/cicd/build/IS_RC"
   type      = "String"
   value     = "false"
   overwrite = true
@@ -449,12 +383,8 @@ resource "aws_ssm_parameter" "is_rc" {
   lifecycle { ignore_changes = [value] }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Secrets Manager
-# ─────────────────────────────────────────────────────────────────────────────
-
 resource "aws_secretsmanager_secret" "gpg_signing_key" {
-  name                    = "mydbops/cicd/gpg-signing-key-1"
+  name                    = "pg-platform/cicd/gpg-signing-key"
   description             = "Base64-encoded GPG private key for package signing"
   recovery_window_in_days = 0
   tags                    = var.tags
@@ -469,8 +399,8 @@ resource "aws_secretsmanager_secret_version" "gpg_signing_key" {
 
 resource "aws_secretsmanager_secret" "pulp_password" {
   count                   = var.pulp_url != "" ? 1 : 0
-  name                    = "mydbops/cicd/pulp-password"
-  description             = "Pulp API password for optional Pulp integration"
+  name                    = "pg-platform/cicd/pulp-password"
+  description             = "Pulp API password"
   recovery_window_in_days = 7
   tags                    = var.tags
 }
@@ -483,14 +413,8 @@ resource "aws_secretsmanager_secret_version" "pulp_password" {
   lifecycle { ignore_changes = [secret_string] }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CodeBuild Projects — shared across all PG pipelines
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ── ParseTag (Stage 2) ────────────────────────────────────────────────────────
-
 resource "aws_codebuild_project" "parse_tag" {
-  name          = "mydbops-parse-tag"
+  name          = "pg-platform-parse-tag"
   description   = "Parses git tag, validates METADATA.yml, writes SSM, exports pipeline vars"
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 5
@@ -511,7 +435,7 @@ resource "aws_codebuild_project" "parse_tag" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/mydbops-parse-tag"
+      group_name  = "/aws/codebuild/pg-platform-parse-tag"
       stream_name = ""
     }
   }
@@ -519,10 +443,8 @@ resource "aws_codebuild_project" "parse_tag" {
   tags = var.tags
 }
 
-# ── Ubuntu amd64 (Stage 3) ────────────────────────────────────────────────────
-
 resource "aws_codebuild_project" "build_ubuntu_amd64" {
-  name          = "mydbops-build-ubuntu-amd64"
+  name          = "pg-platform-build-ubuntu-amd64"
   description   = "Builds .deb packages for Ubuntu 20/22/24 on x86_64"
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 60
@@ -543,7 +465,7 @@ resource "aws_codebuild_project" "build_ubuntu_amd64" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/mydbops-build-ubuntu-amd64"
+      group_name  = "/aws/codebuild/pg-platform-build-ubuntu-amd64"
       stream_name = ""
     }
   }
@@ -551,10 +473,8 @@ resource "aws_codebuild_project" "build_ubuntu_amd64" {
   tags = var.tags
 }
 
-# ── Ubuntu arm64 (Stage 3) ────────────────────────────────────────────────────
-
 resource "aws_codebuild_project" "build_ubuntu_arm64" {
-  name          = "mydbops-build-ubuntu-arm64"
+  name          = "pg-platform-build-ubuntu-arm64"
   description   = "Builds .deb packages for Ubuntu 22/24 on aarch64"
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 60
@@ -564,9 +484,6 @@ resource "aws_codebuild_project" "build_ubuntu_arm64" {
   environment {
     type            = "ARM_CONTAINER"
     compute_type    = "BUILD_GENERAL1_LARGE"
-    # AWS publishes no Ubuntu image for ARM_CONTAINER — only Amazon Linux is available.
-    # The buildspec installs host tools via yum; the actual DEB build runs inside
-    # the Ubuntu arm64 Docker image pulled from ECR, so the host OS doesn't matter.
     image           = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
     privileged_mode = true
   }
@@ -578,7 +495,7 @@ resource "aws_codebuild_project" "build_ubuntu_arm64" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/mydbops-build-ubuntu-arm64"
+      group_name  = "/aws/codebuild/pg-platform-build-ubuntu-arm64"
       stream_name = ""
     }
   }
@@ -586,10 +503,8 @@ resource "aws_codebuild_project" "build_ubuntu_arm64" {
   tags = var.tags
 }
 
-# ── RPM amd64 (Stage 3) ───────────────────────────────────────────────────────
-
 resource "aws_codebuild_project" "build_rpm_amd64" {
-  name          = "mydbops-build-rpm-amd64"
+  name          = "pg-platform-build-rpm-amd64"
   description   = "Builds .rpm packages for EPEL 8/9/10 + Fedora 42/43 on x86_64"
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 60
@@ -599,9 +514,6 @@ resource "aws_codebuild_project" "build_rpm_amd64" {
   environment {
     type            = "LINUX_CONTAINER"
     compute_type    = var.codebuild_compute_type
-    # Amazon Linux 2023 x86_64 — buildspec uses yum.
-    # standard:7.0 is Ubuntu (no yum) and would fail at INSTALL phase.
-    # Image name: "amazonlinux-x86_64" not "amazonlinux2023-x86_64" (AWS naming convention).
     image           = "aws/codebuild/amazonlinux-x86_64-standard:5.0"
     privileged_mode = true
   }
@@ -613,7 +525,7 @@ resource "aws_codebuild_project" "build_rpm_amd64" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/mydbops-build-rpm-amd64"
+      group_name  = "/aws/codebuild/pg-platform-build-rpm-amd64"
       stream_name = ""
     }
   }
@@ -621,10 +533,8 @@ resource "aws_codebuild_project" "build_rpm_amd64" {
   tags = var.tags
 }
 
-# ── RPM arm64 (Stage 3) ───────────────────────────────────────────────────────
-
 resource "aws_codebuild_project" "build_rpm_arm64" {
-  name          = "mydbops-build-rpm-arm64"
+  name          = "pg-platform-build-rpm-arm64"
   description   = "Builds .rpm packages for EPEL 8/9 on aarch64"
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 60
@@ -634,9 +544,6 @@ resource "aws_codebuild_project" "build_rpm_arm64" {
   environment {
     type            = "ARM_CONTAINER"
     compute_type    = "BUILD_GENERAL1_LARGE"
-    # Amazon Linux 2023 aarch64 — matches the yum-based buildspec.
-    # amazonlinux2-aarch64-standard:3.0 (AL2) was EOL as of June 2025.
-    # Image name: "amazonlinux-aarch64" not "amazonlinux2023-aarch64" (AWS naming convention).
     image           = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
     privileged_mode = true
   }
@@ -648,7 +555,7 @@ resource "aws_codebuild_project" "build_rpm_arm64" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/mydbops-build-rpm-arm64"
+      group_name  = "/aws/codebuild/pg-platform-build-rpm-arm64"
       stream_name = ""
     }
   }
@@ -656,14 +563,8 @@ resource "aws_codebuild_project" "build_rpm_arm64" {
   tags = var.tags
 }
 
-# ── Test install amd64 (Stage 4) ─────────────────────────────────────────────
-# Uses Amazon Linux x86_64 to match the arm64 test project — there is no Ubuntu
-# ARM CodeBuild image, so both test projects use Amazon Linux for consistency.
-# The buildspec starts dockerd manually; actual test containers are distro images
-# pulled from public registries, not the ECR build images.
-
 resource "aws_codebuild_project" "test_install" {
-  name          = "mydbops-test-install"
+  name          = "pg-platform-test-install"
   description   = "Install-tests x86_64 packages from S3 staging in clean containers"
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 30
@@ -684,7 +585,7 @@ resource "aws_codebuild_project" "test_install" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/mydbops-test-install"
+      group_name  = "/aws/codebuild/pg-platform-test-install"
       stream_name = ""
     }
   }
@@ -692,14 +593,8 @@ resource "aws_codebuild_project" "test_install" {
   tags = var.tags
 }
 
-# ── Test install arm64 (Stage 4) ─────────────────────────────────────────────
-# Runs the same buildspec-test.yml on an Amazon Linux ARM host (no Ubuntu ARM
-# CodeBuild image exists). The test script detects host arch via `uname -m` and
-# skips amd64 packages automatically, so only arm64 targets
-# (ubuntu-22/24-arm64, epel-8/9-aarch64) are tested here.
-
 resource "aws_codebuild_project" "test_install_arm64" {
-  name          = "mydbops-test-install-arm64"
+  name          = "pg-platform-test-install-arm64"
   description   = "Install-tests aarch64 packages from S3 staging in clean containers"
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 30
@@ -720,15 +615,13 @@ resource "aws_codebuild_project" "test_install_arm64" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/mydbops-test-install-arm64"
+      group_name  = "/aws/codebuild/pg-platform-test-install-arm64"
       stream_name = ""
     }
   }
 
   tags = var.tags
 }
-
-# ── Repo updater (Stage 5 + Stage 7) ─────────────────────────────────────────
 
 module "repo_updater" {
   source = "./modules/repo-updater"
@@ -741,10 +634,6 @@ module "repo_updater" {
   tags               = var.tags
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# One CodePipeline per PG major version
-# ─────────────────────────────────────────────────────────────────────────────
-
 module "pg_pipeline" {
   for_each = toset(var.pg_versions)
   source   = "./modules/pg-pipeline"
@@ -755,13 +644,12 @@ module "pg_pipeline" {
   artifacts_bucket      = var.artifacts_bucket_name
   github_connection_arn = var.github_connection_arn
   packaging_repo        = var.packaging_repo
-  # Extract just the repo name (after the "/") for EventBridge repositoryName filter
   packaging_repo_name   = split("/", var.packaging_repo)[1]
   platform_repo         = var.platform_repo
   codepipeline_role_arn = aws_iam_role.codepipeline.arn
   eventbridge_role_arn  = aws_iam_role.eventbridge.arn
 
-  codebuild_parse_tag_project   = aws_codebuild_project.parse_tag.name
+  codebuild_parse_tag_project    = aws_codebuild_project.parse_tag.name
   codebuild_ubuntu_amd64_project = aws_codebuild_project.build_ubuntu_amd64.name
   codebuild_ubuntu_arm64_project = aws_codebuild_project.build_ubuntu_arm64.name
   codebuild_rpm_amd64_project    = aws_codebuild_project.build_rpm_amd64.name

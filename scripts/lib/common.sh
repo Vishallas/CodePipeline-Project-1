@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/lib/common.sh — Shared utilities for mydbops-pg-platform build scripts
+# scripts/lib/common.sh — Shared utilities for pg-platform build scripts
 #
 # Source this file at the top of every script:
 #   source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"

@@ -1,7 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Root outputs
-# ─────────────────────────────────────────────────────────────────────────────
-
 output "artifacts_bucket" {
   description = "S3 bucket for build artifacts"
   value       = aws_s3_bucket.artifacts.id
@@ -38,12 +34,12 @@ output "eventbridge_role_arn" {
 }
 
 output "pipeline_arns" {
-  description = "Map of PG major version → CodePipeline ARN"
+  description = "Map of PG major version to CodePipeline ARN"
   value       = { for k, v in module.pg_pipeline : k => v.pipeline_arn }
 }
 
 output "eventbridge_rule_arns" {
-  description = "Map of PG major version → EventBridge rule ARN"
+  description = "Map of PG major version to EventBridge rule ARN"
   value       = { for k, v in module.pg_pipeline : k => v.eventbridge_rule_arn }
 }
 

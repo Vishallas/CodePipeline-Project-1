@@ -14,7 +14,7 @@ _MYDBOPS_RPM_LOADED=1
 #   SOURCES/  ← tarball + all auxiliary source files from rpm/main/
 #   SPECS/    ← .spec file
 #
-# packaging_dir: the package's directory in mydbops-pg-packaging, e.g.
+# packaging_dir: the package's directory in pg-packaging, e.g.
 #   .../packages/postgresql-14
 assemble_rpm_structure() {
     local tarball="$1"

@@ -54,8 +54,8 @@ if [[ ! -f "$METADATA" ]]; then
 fi
 
 CHANGE_MSG="${CHANGE_MSG:-Upgrade to ${PACKAGE_NAME} ${NEW_VERSION}}"
-AUTHOR_NAME="${GIT_AUTHOR_NAME:-Mydbops}"
-AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-ops@mydbops.com}"
+AUTHOR_NAME="${GIT_AUTHOR_NAME:-Pg-platform}"
+AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-ops@pg-platform.com}"
 DATE_RFC="$(date -R)"
 DATE_RPM="$(date '+%a %b %d %Y')"
 

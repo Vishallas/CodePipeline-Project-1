@@ -1,6 +1,6 @@
 version: 0.2
 # ─────────────────────────────────────────────────────────────────────────────
-# Mydbops CodeBuild Buildspec — Stage 4: Install Tests
+# Pg-platform CodeBuild Buildspec — Stage 4: Install Tests
 #
 # Downloads built packages from S3 staging, installs each in a clean distro
 # container, verifies the postgres binary version.
@@ -14,9 +14,9 @@ env:
   # PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_REVISION, PG_MAJOR, BUILD_ENV
   # injected by the pipeline via #{ParseTag.*} EnvironmentVariables.
   parameter-store:
-    S3_BUCKET:      /mydbops/cicd/build/S3_BUCKET
-    ECR_ACCOUNT_ID: /mydbops/cicd/ecr/account_id
-    ECR_REGION:     /mydbops/cicd/ecr/region
+    S3_BUCKET:      /pg-platform/cicd/build/S3_BUCKET
+    ECR_ACCOUNT_ID: /pg-platform/cicd/ecr/account_id
+    ECR_REGION:     /pg-platform/cicd/ecr/region
 
 phases:
   install:

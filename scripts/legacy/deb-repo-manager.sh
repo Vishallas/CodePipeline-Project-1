@@ -197,7 +197,7 @@ Architectures: amd64 arm64
 Components: main
 Description: PostgreSQL Debian Repository - $distro
 Label: PostgreSQL
-Origin: mydbopsllp
+Origin: pg-platform
 
 RELEASE_HEADER
         

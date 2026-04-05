@@ -1,13 +1,13 @@
 # Adding a New Package
 
-This guide walks through adding a new extension or tool to the Mydbops PostgreSQL packaging system.
+This guide walks through adding a new extension or tool to the Pg-platform PostgreSQL packaging system.
 
 ## Prerequisites
 
 - Both repos cloned side by side:
   ```
-  mydbops-pg-platform/     ← build infrastructure (this repo)
-  mydbops-pg-packaging/    ← package definitions
+  pg-platform/     ← build infrastructure (this repo)
+  pg-packaging/    ← package definitions
   ```
 - Docker running locally (for local test builds)
 - AWS credentials with S3 write access to a dev/staging bucket
@@ -15,19 +15,19 @@ This guide walks through adding a new extension or tool to the Mydbops PostgreSQ
 
 ## Step 1: Scaffold the package
 
-Run `new-package.sh` from inside `mydbops-pg-platform/`:
+Run `new-package.sh` from inside `pg-platform/`:
 
 ```bash
 ./scripts/new-package.sh \
   --name postgresql-14-pgvector \
   --version 0.7.4 \
   --pg 14 \
-  --packages-dir ../mydbops-pg-packaging \
+  --packages-dir ../pg-packaging \
   --source-url "https://github.com/pgvector/pgvector/archive/refs/tags/v0.7.4.tar.gz" \
   --description "Open-source vector similarity search for PostgreSQL"
 ```
 
-This creates in `mydbops-pg-packaging/packages/postgresql-14-pgvector/`:
+This creates in `pg-packaging/packages/postgresql-14-pgvector/`:
 - `METADATA.yml` — package metadata
 - `build.yml` — build targets (all disabled by default)
 - `debian/main/debian/control` — build dependencies and package metadata
@@ -88,7 +88,7 @@ In `build.yml`, enable one target to start:
 ```bash
 ./scripts/lint.sh \
   --package postgresql-14-pgvector \
-  --packages-dir ../mydbops-pg-packaging
+  --packages-dir ../pg-packaging
 ```
 
 Fix any `[FAIL]` items. `[WARN]` items (like missing sha256) are acceptable during development.
@@ -98,8 +98,8 @@ Fix any `[FAIL]` items. `[WARN]` items (like missing sha256) are acceptable duri
 ```bash
 ./scripts/build-package.sh \
   --package postgresql-14-pgvector \
-  --packages-dir ../mydbops-pg-packaging \
-  --s3-bucket mydbops-cicd-artifacts-dev \
+  --packages-dir ../pg-packaging \
+  --s3-bucket pg-platform-cicd-artifacts-dev \
   --env staging \
   --os ubuntu --release 22 --arch amd64
 ```
@@ -113,7 +113,7 @@ Once the test target builds successfully:
 
 1. Enable additional targets in `build.yml`
 2. Re-run lint with `--strict` to catch any warnings
-3. Open a PR to the appropriate `pgN` branch in `mydbops-pg-packaging`
+3. Open a PR to the appropriate `pgN` branch in `pg-packaging`
 4. After merge, tag to trigger the pipeline (see [releasing.md](releasing.md))
 
 ## Tag format

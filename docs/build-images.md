@@ -1,6 +1,6 @@
 # Build Images — Docker Management
 
-Build images live in ECR (`mydbops/pg-build`) and are pulled by `build-package.sh`
+Build images live in ECR (`pg-platform/pg-build`) and are pulled by `build-package.sh`
 at runtime. They are maintained separately from build scripts — never work around
 a stale image by editing the build script.
 
@@ -92,7 +92,7 @@ el9-x86_64                     linux/amd64    present      present
 
 # View results
 aws ecr describe-image-scan-findings \
-  --repository-name mydbops/pg-build \
+  --repository-name pg-platform/pg-build \
   --image-id imageTag=ubuntu-22.04-amd64
 ```
 
@@ -116,12 +116,12 @@ aws ecr describe-image-scan-findings \
 ```bash
 # 1. Create the ECR repository
 aws ecr create-repository \
-  --repository-name mydbops/pg-build \
+  --repository-name pg-platform/pg-build \
   --region ap-south-1 \
   --image-scanning-configuration scanOnPush=true
 
 # 2. Enable multi-arch builds (required for arm64 images on amd64 host)
-docker buildx create --use --name mydbops-builder
+docker buildx create --use --name pg-platform-builder
 
 # 3. Build and push all images
 export ECR_ACCOUNT_ID=123456789012

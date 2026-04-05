@@ -1,9 +1,9 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# build-env.sh — Mydbops PostgreSQL Platform — Build & Test Orchestrator
+# build-env.sh — Pg-platform PostgreSQL Platform — Build & Test Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Single entry point for building and testing Mydbops PostgreSQL packages
+# Single entry point for building and testing Pg-platform PostgreSQL packages
 # across RPM (EL-8, EL-9, EL-10, Fedora) and DEB (bookworm, bullseye, jammy,
 # noble, focal) distributions using pluggable build environments.
 #
